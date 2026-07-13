@@ -1,5 +1,7 @@
 import os
 import uvicorn
+import httpx
+import subprocess
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_ollama import ChatOllama
@@ -21,7 +23,24 @@ init_error = None
 llm = None
 search_tool = None
 
+def check_and_pull_model():
+    """Verify Ollama status and ensure the model is downloaded."""
+    try:
+        # Check if Ollama is running
+        res = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
+        res.raise_for_status()
+        
+        # Check if model is downloaded
+        models = [m["name"] for m in res.json().get("models", [])]
+        if OLLAMA_MODEL not in models and f"{OLLAMA_MODEL}:latest" not in models:
+            print(f"Model '{OLLAMA_MODEL}' is missing. Pulling from Ollama...")
+            subprocess.run(["ollama", "pull", OLLAMA_MODEL], check=True)
+            print(f"Model '{OLLAMA_MODEL}' successfully downloaded.")
+    except Exception as e:
+        print(f"Warning/Error checking Ollama status: {e}")
+
 try:
+    check_and_pull_model()
     llm = ChatOllama(model=OLLAMA_MODEL, temperature=OLLAMA_TEMPERATURE)
     search_tool = DuckDuckGoSearchRun()
 except Exception as e:
