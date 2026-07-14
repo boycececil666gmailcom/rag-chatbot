@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
 # Import configurations
 from src.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE, HOST, PORT
@@ -43,7 +43,16 @@ async def run_query(request: QueryRequest):
         query = request.message
         print(f"\n--- Query: '{query}' ---")
         
-        messages = [HumanMessage(content=query)]
+        messages = [
+            SystemMessage(content=(
+                "You are an assistant with access to a web search tool.\n"
+                "ONLY use the search tool if the user's query requires real-time, current, or very recent information "
+                "(such as current news, today's weather, current events, or active presidents/prime ministers).\n"
+                "For static, factual, or historical knowledge that you already know (like geography, capitals, math, science, history), "
+                "answer directly and do NOT call the search tool."
+            )),
+            HumanMessage(content=query)
+        ]
         response = llm_with_tools.invoke(messages)
         
         if response.tool_calls:
@@ -54,14 +63,18 @@ async def run_query(request: QueryRequest):
                     tool_output = search_tool.invoke(tool_call["args"])
                 except Exception as tool_err:
                     print(f"Direct tool invoke failed, extracting query value: {tool_err}")
-                    q_val = (
-                        tool_call["args"].get("query")
-                        or tool_call["args"].get("input")
-                        or list(tool_call["args"].values())[0]
-                        if isinstance(tool_call["args"], dict) and tool_call["args"]
-                        else str(tool_call["args"])
-                    )
-                    tool_output = search_tool.invoke(q_val)
+                    try:
+                        q_val = (
+                            tool_call["args"].get("query")
+                            or tool_call["args"].get("input")
+                            or list(tool_call["args"].values())[0]
+                            if isinstance(tool_call["args"], dict) and tool_call["args"]
+                            else str(tool_call["args"])
+                        )
+                        tool_output = search_tool.invoke(q_val)
+                    except Exception as final_tool_err:
+                        print(f"Tool invocation failed completely: {final_tool_err}")
+                        tool_output = f"Error: Failed to perform search due to network timeout or API issue: {final_tool_err}"
                 
                 tool_message = ToolMessage(
                     content=str(tool_output),

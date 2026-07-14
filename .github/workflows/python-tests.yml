@@ -26,6 +26,26 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run pytest
+    - name: Run Unit Tests
       run: |
-        python -m pytest
+        bash run_unit_tests.sh
+
+    - name: Install Ollama
+      run: |
+        curl -fsSL https://ollama.com/install.sh | sh
+
+    - name: Start Ollama Service
+      run: |
+        ollama serve &
+        for i in {1..15}; do
+          curl -s http://localhost:11434 && break
+          sleep 1
+        done
+
+    - name: Pull Ollama Model
+      run: |
+        ollama pull qwen2.5:7b
+
+    - name: Run E2E Tests
+      run: |
+        bash run_e2e_tests.sh
