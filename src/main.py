@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 # Import configurations
 from src.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE, HOST, PORT
@@ -20,17 +21,19 @@ class QueryResponse(BaseModel):
 init_error = None
 llm = None
 search_tool = None
+llm_with_tools = None
 
 try:
     llm = ChatOllama(model=OLLAMA_MODEL, temperature=OLLAMA_TEMPERATURE)
     search_tool = DuckDuckGoSearchRun()
+    llm_with_tools = llm.bind_tools([search_tool])
 except Exception as e:
     init_error = str(e)
     print(f"Error initializing LangChain components: {e}")
 
 @app.post("/query", response_model=QueryResponse)
 async def run_query(request: QueryRequest):
-    if llm is None or search_tool is None:
+    if llm is None or search_tool is None or llm_with_tools is None:
         raise HTTPException(
             status_code=500, 
             detail=f"LLM/Search is not initialized. Actual Error: {init_error}. (Ensure Ollama is running and all dependencies are installed)"
@@ -38,36 +41,43 @@ async def run_query(request: QueryRequest):
     
     try:
         query = request.message
-        
-        # 1. Classify if query needs real-time search
-        classification_prompt = (
-            "Instruction: Decide if the following question asks about recent events, current facts, or real-time details (like current president, today's news, current weather, current dates) that require an internet search to be accurate.\n"
-            f"Question: {query}\n"
-            "Does this require an internet search? Answer with ONLY 'YES' or 'NO' (no other text)."
-        )
-        classification_res = llm.invoke(classification_prompt).content.strip().upper()
-        
         print(f"\n--- Query: '{query}' ---")
-        print(f"Classification: '{classification_res}'")
         
-        if "YES" in classification_res:
-            print("Searching...")
-            search_results = search_tool.run(query)
-            print(f"Search Results retrieved successfully.")
+        messages = [HumanMessage(content=query)]
+        response = llm_with_tools.invoke(messages)
+        
+        if response.tool_calls:
+            print(f"Tool calls requested: {response.tool_calls}")
+            messages.append(response)
+            for tool_call in response.tool_calls:
+                try:
+                    tool_output = search_tool.invoke(tool_call["args"])
+                except Exception as tool_err:
+                    print(f"Direct tool invoke failed, extracting query value: {tool_err}")
+                    q_val = (
+                        tool_call["args"].get("query")
+                        or tool_call["args"].get("input")
+                        or list(tool_call["args"].values())[0]
+                        if isinstance(tool_call["args"], dict) and tool_call["args"]
+                        else str(tool_call["args"])
+                    )
+                    tool_output = search_tool.invoke(q_val)
+                
+                tool_message = ToolMessage(
+                    content=str(tool_output),
+                    tool_call_id=tool_call["id"]
+                )
+                messages.append(tool_message)
             
-            # 2. Feed search results as context
-            prompt = (
-                f"Use the search results below to answer the query.\n\n"
-                f"Search Results:\n{search_results}\n\n"
-                f"Query: {query}"
-            )
-            response = llm.invoke(prompt)
+            print("Invoking model again with search results...")
+            final_response = llm_with_tools.invoke(messages)
+            response_content = final_response.content
         else:
             print("Answering directly...")
-            response = llm.invoke(query)
+            response_content = response.content
             
         print("Response Generated successfully.\n")
-        return QueryResponse(response=response.content)
+        return QueryResponse(response=response_content)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution error: {str(e)}")
