@@ -2,7 +2,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from src.main import app
-from src.reranker import rerank_documents
 from src.config import OLLAMA_MODEL
 from langchain_core.documents import Document
 
@@ -32,22 +31,18 @@ def test_ingest_endpoint(mock_vector_store):
     assert response.json()["chunk_count"] > 0
     mock_vector_store.add_documents.assert_called_once()
 
-def test_rerank_documents():
+def test_flashrank_rerank():
+    from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
     query = "project Supernova"
     doc1 = Document(page_content="This is project Supernova 9.", metadata={})
     doc2 = Document(page_content="This is a completely unrelated file.", metadata={})
     
-    # doc1 has high semantic similarity (dist 0.1 -> sim 0.9) and high term overlap
-    # doc2 has low similarity (dist 0.9 -> sim 0.1) and low overlap
-    docs_with_scores = [
-        (doc1, 0.1),
-        (doc2, 0.9)
-    ]
-    
-    reranked = rerank_documents(query, docs_with_scores)
+    compressor = FlashrankRerank(top_n=2)
+    reranked = compressor.compress_documents([doc2, doc1], query)
     assert len(reranked) == 2
     # doc1 should rank first
-    assert reranked[0][0].page_content == "This is project Supernova 9."
+    assert reranked[0].page_content == "This is project Supernova 9."
+    assert "relevance_score" in reranked[0].metadata
 
 def test_reciprocal_rank_fusion():
     from src.rrf import reciprocal_rank_fusion
@@ -143,21 +138,21 @@ def test_query_tool_hallucination_safeguard(mock_llm_with_tools):
     assert response.json()["tool_calls_executed"] == []
     assert response.json()["fallback_triggered"] == True
 
-def test_bm25_searcher():
-    from src.bm25 import BM25Searcher
+def test_bm25_retriever():
+    from langchain_community.retrievers import BM25Retriever
     from langchain_core.documents import Document
     
     doc1 = Document(page_content="The quick brown fox jumps over the lazy dog", metadata={})
     doc2 = Document(page_content="Python is an amazing programming language", metadata={})
     doc3 = Document(page_content="Web search and database retrieval framework", metadata={})
     
-    searcher = BM25Searcher([doc1, doc2, doc3])
+    retriever = BM25Retriever.from_documents([doc1, doc2, doc3])
+    retriever.k = 1
     
     # Query with exact matching words in doc2
-    results = searcher.search("programming language", k=1)
+    results = retriever.invoke("programming language")
     assert len(results) == 1
-    assert results[0][0].page_content == "Python is an amazing programming language"
-    assert results[0][1] > 0.0
+    assert results[0].page_content == "Python is an amazing programming language"
 
 def test_reciprocal_rank_fusion():
     from src.rrf import reciprocal_rank_fusion

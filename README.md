@@ -71,9 +71,9 @@ sequenceDiagram
     autonumber
     actor User
     participant App as FastAPI Server (main.py)
-    participant BM25 as BM25 Searcher (bm25.py)
+    participant BM25 as BM25Retriever (LangChain)
     participant RRF as RRF Module (rrf.py)
-    participant Reranker as Reranker (reranker.py)
+    participant Reranker as FlashrankRerank (LangChain)
     participant Ollama as Local Ollama LLM
     participant VectorStore as Chroma Vector DB
     participant Search as DuckDuckGo Search
@@ -89,14 +89,14 @@ sequenceDiagram
             App->>VectorStore: Get dense semantic results (k=10)
             VectorStore-->>App: Semantic documents + distance
             
-            App->>BM25: Search sparse keywords (k=10)
-            BM25-->>App: Sparse documents + BM25 score
+            App->>BM25: BM25Retriever.invoke(query)
+            BM25-->>App: Sorted sparse documents
             
             App->>RRF: reciprocal_rank_fusion(dense, sparse)
             RRF-->>App: Top 5 fused documents
             
-            App->>Reranker: rerank_documents(query, fused_docs)
-            Reranker-->>App: Sorted top-2 context chunks (by Cross-Encoder)
+            App->>Reranker: FlashrankRerank.compress_documents(fused_docs, query)
+            Reranker-->>App: Top-2 compressed/reranked documents
             
             App->>Ollama: Prompt with top 2 reranked context chunks
             Ollama-->>App: Final answer text

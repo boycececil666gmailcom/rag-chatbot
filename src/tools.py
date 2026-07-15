@@ -3,8 +3,8 @@ from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.documents import Document
 import src.vector_db as db
-from src.bm25 import BM25Searcher
-from src.reranker import rerank_documents
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
 from src.rrf import reciprocal_rank_fusion
 
 # Setup search tool
@@ -40,8 +40,10 @@ def retrieve_local_documents(query: str) -> str:
         # 3. Perform BM25 sparse search (top 10)
         bm25_results = []
         if all_documents:
-            bm25_searcher = BM25Searcher(all_documents)
-            bm25_results = bm25_searcher.search(query, k=10)
+            retriever = BM25Retriever.from_documents(all_documents)
+            retriever.k = 10
+            bm25_docs = retriever.invoke(query)
+            bm25_results = [(doc, float(len(bm25_docs) - i)) for i, doc in enumerate(bm25_docs)]
             
         if not dense_results and not bm25_results:
             return "No matching local documents found."
@@ -49,21 +51,14 @@ def retrieve_local_documents(query: str) -> str:
         # 4. Fuse using Reciprocal Rank Fusion (RRF) from src.rrf
         fused_docs = reciprocal_rank_fusion(dense_results, bm25_results, k=60, top_n=5)
         
-        # 5. Prepare document/score pairs for reranker.
-        # Use the original dense search distance score if it exists, otherwise 1.0 (indicating low similarity).
-        dense_distances = {doc.page_content: dist for doc, dist in dense_results}
+        # 5. Apply FlashRank Cross-Encoder reranker using LangChain's FlashrankRerank
+        compressor = FlashrankRerank(top_n=2)
+        reranked_docs = compressor.compress_documents(fused_docs, query)
         
-        doc_score_tuples = []
-        for doc in fused_docs:
-            dist = dense_distances.get(doc.page_content, 1.0)
-            doc_score_tuples.append((doc, dist))
-            
-        # 6. Apply FlashRank Cross-Encoder reranker
-        reranked_docs = rerank_documents(query, doc_score_tuples)
-        
-        # Format top 2 chunks as output context
+        # Format top chunks as output context
         context_list = []
-        for doc, score in reranked_docs[:2]:
+        for doc in reranked_docs:
+            score = doc.metadata.get("relevance_score", 0.0)
             context_list.append(f"[Match Score: {score:.3f}] Content: {doc.page_content}")
             
         return "\n\n".join(context_list)
