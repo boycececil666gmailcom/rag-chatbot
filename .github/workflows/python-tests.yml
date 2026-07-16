@@ -12,6 +12,8 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      OLLAMA_MODEL: qwen2.5:3b
 
     steps:
     - uses: actions/checkout@v4
