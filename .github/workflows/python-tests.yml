@@ -44,7 +44,7 @@ jobs:
 
     - name: Pull Ollama Models
       run: |
-        ollama pull qwen2.5:7b
+        ollama pull qwen2.5:3b
         ollama pull nomic-embed-text
 
     - name: Run E2E Tests
