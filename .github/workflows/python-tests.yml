@@ -27,7 +27,54 @@ jobs:
 
     - name: Run Unit Tests
       run: |
-        bash run_unit_tests.sh
+        bash tests/run_unit_tests.sh
+
+    - name: Set up Kind Kubernetes cluster
+      if: ${{ secrets.GEMINI_API_KEY != '' }}
+      uses: helm/kind-action@v1.10.0
+
+    - name: Deploy Fintech Chatbot to Kind
+      if: ${{ secrets.GEMINI_API_KEY != '' }}
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        # Build docker images
+        docker build -t chatbot-backend:latest -f src/chatbot_backend/Dockerfile .
+        docker build -t chatbot-gateway:latest -f src/api_gateway/Dockerfile .
+        
+        # Load images into Kind
+        kind load docker-image chatbot-backend:latest
+        kind load docker-image chatbot-gateway:latest
+        
+        # Prepare secrets.yaml with base64 encoded key
+        B64_KEY=$(echo -n "$GEMINI_API_KEY" | base64)
+        cat <<EOF > k8s/secrets.yaml
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: gemini-secrets
+          namespace: fintech-chatbot
+        type: Opaque
+        data:
+          gemini-api-key: $B64_KEY
+        EOF
+        
+        # Apply manifests
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/chromadb-statefulset.yaml
+        kubectl apply -f k8s/backend-deployment.yaml
+        kubectl apply -f k8s/gateway-deployment.yaml
+        kubectl apply -f k8s/ingress.yaml
+        
+        # Wait for rollout
+        kubectl rollout status statefulset/chromadb -n fintech-chatbot --timeout=90s
+        kubectl rollout status deployment/chatbot-backend -n fintech-chatbot --timeout=90s
+        kubectl rollout status deployment/chatbot-gateway -n fintech-chatbot --timeout=90s
+        
+        # Port-forward in the background
+        kubectl port-forward service/chatbot-gateway-service -n fintech-chatbot 8080:80 &
+        sleep 5
 
     - name: Run E2E Tests
       env:
@@ -36,5 +83,5 @@ jobs:
         if [ -z "$GEMINI_API_KEY" ]; then
           echo "Warning: GEMINI_API_KEY secret is not set. Skipping E2E tests."
         else
-          bash run_e2e_tests.sh
+          bash tests/run_e2e_tests.sh
         fi

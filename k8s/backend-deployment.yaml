@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbot-backend-service
+  namespace: fintech-chatbot
+  labels:
+    app: chatbot-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      name: http
+  selector:
+    app: chatbot-backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbot-backend
+  namespace: fintech-chatbot
+  labels:
+    app: chatbot-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chatbot-backend
+  template:
+    metadata:
+      labels:
+        app: chatbot-backend
+    spec:
+      containers:
+        - name: chatbot-backend
+          image: chatbot-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            # Connect to the self-hosted Chroma DB headless service
+            - name: CHROMA_SERVER_HOST
+              value: "chromadb-service"
+            - name: CHROMA_SERVER_PORT
+              value: "8000"
+            # Set default active models
+            - name: GEMINI_MODEL
+              value: "gemini-3.1-flash-lite"
+            - name: GEMINI_EMBED_MODEL
+              value: "gemini-embedding-001"
+            - name: GEMINI_TEMPERATURE
+              value: "0.0"
+            # Fetch sensitive key from K8s Secret
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-secrets
+                  key: gemini-api-key
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

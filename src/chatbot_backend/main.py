@@ -8,15 +8,14 @@ logger = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
-# Import configuration
-from src.config import HOST, PORT, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE
+from src.chatbot_backend.config import HOST, PORT, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE
 
 # Import modular components
-import src.vector_db as db
-from src.tools import retrieve_local_documents
-from src.models import MessageSchema, QueryRequest, QueryResponse, IngestRequest, IngestResponse
+import src.chatbot_backend.vector_db as db
+from src.chatbot_backend.tools import retrieve_local_documents
+from src.chatbot_backend.models import MessageSchema, QueryRequest, QueryResponse, IngestRequest, IngestResponse
 
-app = FastAPI(title="Fintech RAG Chatbot")
+app = FastAPI(title="Fintech RAG Chatbot Backend")
 
 # Initialize LLM & Tool binding
 llm = None
@@ -176,7 +175,16 @@ async def run_query(request: QueryRequest):
 
 @app.get("/health")
 async def health_check():
-    vector_ok = "ok" if db.vector_store is not None else "failed"
+    try:
+        db.get_vector_store()
+        vector_ok = "ok"
+    except Exception as e:
+        logger.error(f"Health check failed to initialize vector store: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Vector store initialization failed: {str(e)}"
+        )
+        
     return {
         "status": "ok",
         "model": GEMINI_MODEL,
@@ -185,4 +193,4 @@ async def health_check():
     }
 
 if __name__ == "__main__":
-    uvicorn.run("src.main:app", host=HOST, port=PORT, reload=True)
+    uvicorn.run("src.chatbot_backend.main:app", host=HOST, port=PORT, reload=True)

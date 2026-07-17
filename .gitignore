@@ -22,3 +22,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Kubernetes secrets
+k8s/secrets.yaml

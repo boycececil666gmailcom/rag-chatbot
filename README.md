@@ -1,6 +1,6 @@
 # Fintech RAG Chatbot
 
-A modular, stateless local Retrieval-Augmented Generation (RAG) customer service chatbot for a Fintech SaaS platform utilizing a local Ollama instance and a Chroma Vector Database for local document storage.
+A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot for a Fintech SaaS platform utilizing the Google Gemini API and a Chroma Vector Database for document storage.
 
 ## Business & Product Flow (Overview)
 
@@ -19,7 +19,7 @@ flowchart TD
     %% Main customer interaction entry point
     Client(["📱 Client App / Customer"])
     
-    Client -->|"1. Submits chat query"| Router{"🤖 LLM Router (Ollama)"}
+    Client -->|"1. Submits chat query"| Router{"🤖 LLM Router (Gemini)"}
     
     %% Router checks relevance
     Router -->|"2. Checks query topic"| IsFintech{"Is it a Fintech SaaS query?"}
@@ -72,12 +72,12 @@ graph TD
     %% Ingest path
     Server -->|POST /ingest| Ingest[Document Ingestion Path]
     Ingest --> Split[RecursiveCharacterTextSplitter]
-    Split --> Embed[Ollama Embeddings]
+    Split --> Embed[Gemini Embeddings]
     Embed --> DB[(Chroma Vector DB)]
 
     %% Query path
     Server -->|POST /query| Query[Query Processing Path]
-    Query --> Router{Ollama Agent Router}
+    Query --> Router{Gemini Agent Router}
     Router -->|Local Context| Local[retrieve_local_documents Tool]
     Router -->|Direct Generation Refused| Direct[Refusal Response]
     
@@ -110,7 +110,7 @@ sequenceDiagram
 
 ### 2. Query Path
 
-When a query is received, the Ollama model is invoked with tool-calling capabilities. It dynamically decides whether it needs to query the local vector database for platform facts or answer directly.
+When a query is received, the Gemini model is invoked with tool-calling capabilities. It dynamically decides whether it needs to query the local vector database for platform facts or answer directly.
 
 ```mermaid
 sequenceDiagram
@@ -120,16 +120,16 @@ sequenceDiagram
     participant BM25 as BM25Retriever (LangChain)
     participant RRF as RRF Module (rrf.py)
     participant Reranker as FlashrankRerank (LangChain)
-    participant Ollama as Local Ollama LLM
+    participant Gemini as Google Gemini API
     participant VectorStore as Chroma Vector DB
 
     User->>App: POST /query {"message": "...", "history": [...]}
-    App->>Ollama: Check query context & tools
+    App->>Gemini: Check query context & tools
     
     alt Path A: Needs Local Document Context
         rect rgb(224, 242, 254)
             note right of App: Tool call: retrieve_local_documents
-            Ollama-->>App: Tool call request (retrieve_local_documents)
+            Gemini-->>App: Tool call request (retrieve_local_documents)
             
             App->>VectorStore: Get dense semantic results (k=10)
             VectorStore-->>App: Semantic documents + distance
@@ -143,8 +143,8 @@ sequenceDiagram
             App->>Reranker: FlashrankRerank.compress_documents(fused_docs, query)
             Reranker-->>App: Top-2 compressed/reranked documents
             
-            App->>Ollama: Prompt with top 2 reranked context chunks
-            Ollama-->>App: Final answer text
+            App->>Gemini: Prompt with top 2 reranked context chunks
+            Gemini-->>App: Final answer text
         end
     else Path B: Direct Generation Refused
         rect rgb(254, 226, 226)
@@ -155,3 +155,66 @@ sequenceDiagram
     
     App-->>User: Response {"response": "...", "tool_calls_executed": [...]}
 ```
+
+---
+
+## Containerization & Kubernetes Deployment
+
+To demonstrate cloud-native design, we deploy this chatbot utilizing a decoupled stateless/stateful architecture.
+
+### Kubernetes Bootstrap Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Kubelet as Kubernetes Kubelet
+    participant App as Chatbot Pod (FastAPI)
+    participant K8s as Kubernetes API Server
+    participant Chroma as Chroma DB Pod
+
+    Note over App: Startup & Bootstrapping
+    App->>Chroma: HTTP Liveness Check /api/v1/heartbeat
+    alt Connection Success
+        rect rgb(220, 252, 231)
+            Chroma-->>App: HTTP 200 OK (heartbeat)
+            App->>K8s: Report Ready (Readiness Probe Succeeded)
+        end
+    else Connection Failure
+        rect rgb(254, 226, 226)
+            Chroma-->>App: Connection Error / Timeout
+            App->>K8s: Report Not Ready (Readiness Probe Fails)
+            Note over K8s: Pod remains out of load balancer rotation
+        end
+    end
+```
+
+### Steps to Deploy to a Kubernetes Cluster
+
+1. **Namespace Setup**:
+   ```bash
+   kubectl apply -f k8s/namespace.yaml
+   ```
+
+2. **Secret Configuration**:
+   Copy the secret template and fill in your Base64 encoded Google Gemini API key:
+   ```bash
+   cp k8s/secrets.yaml.template k8s/secrets.yaml
+   # Edit k8s/secrets.yaml with your base64 credentials
+   kubectl apply -f k8s/secrets.yaml
+   ```
+
+3. **Deploy Self-Hosted Chroma DB**:
+   ```bash
+   kubectl apply -f k8s/chromadb-statefulset.yaml
+   ```
+
+4. **Build and Deploy the FastAPI Web Server**:
+   ```bash
+   docker build -t fintech-rag-chatbot:latest .
+   kubectl apply -f k8s/backend-deployment.yaml
+   ```
+
+5. **Expose the Application**:
+   ```bash
+   kubectl apply -f k8s/ingress.yaml
+   ```

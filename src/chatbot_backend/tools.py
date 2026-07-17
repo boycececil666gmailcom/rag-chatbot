@@ -1,18 +1,20 @@
 from typing import List
 from langchain_core.tools import tool
 from langchain_core.documents import Document
-import src.vector_db as db
+import src.chatbot_backend.vector_db as db
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-from src.rrf import reciprocal_rank_fusion
+from src.chatbot_backend.rrf import reciprocal_rank_fusion
 
 # Setup tools
 
 def get_all_documents() -> List[Document]:
     """Helper to fetch all documents stored in the Chroma vector database."""
-    if db.vector_store is None:
+    try:
+        store = db.get_vector_store()
+    except Exception:
         return []
-    results = db.vector_store.get(include=["documents", "metadatas"])
+    results = store.get(include=["documents", "metadatas"])
     docs = []
     if results and "documents" in results:
         texts = results["documents"]
@@ -26,11 +28,13 @@ def retrieve_local_documents(query: str) -> str:
     """Retrieve semantically relevant document chunks from the local vector database.
     Use this tool when the query refers to private documentation, internal guidelines,
     project names (like 'Supernova'), or local workspace facts."""
-    if db.vector_store is None:
-        return "Error: Local Vector database is not initialized."
+    try:
+        store = db.get_vector_store()
+    except Exception as e:
+        return f"Error: Local Vector database is not initialized: {e}"
     try:
         # 1. Retrieve dense candidates (top 10)
-        dense_results = db.vector_store.similarity_search_with_score(query, k=10)
+        dense_results = store.similarity_search_with_score(query, k=10)
         
         # 2. Get all documents from vector store to build BM25 index
         all_documents = get_all_documents()
@@ -71,5 +75,3 @@ def retrieve_local_documents(query: str) -> str:
         import traceback
         traceback.print_exc()
         return f"Error querying local documents: {str(e)}"
-
-# Web search removed as chatbot focuses strictly on local context retrieval

@@ -6,7 +6,7 @@ ddgs
 pytest
 pytest-asyncio
 httpx
-chromadb
+chromadb==0.5.4
 flashrank
 rank_bm25
 langchain-google-genai
