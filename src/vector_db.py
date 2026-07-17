@@ -1,9 +1,8 @@
 import os
-from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from src.config import OLLAMA_EMBED_MODEL, CHROMA_PERSIST_DIR
+from src.config import CHROMA_PERSIST_DIR, GEMINI_API_KEY, GEMINI_EMBED_MODEL
 
 # Ensure database directory exists
 os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
@@ -16,8 +15,17 @@ embeddings = None
 vector_store = None
 init_error = None
 
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not configured in the environment variables.")
+
 try:
-    embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL)
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model=GEMINI_EMBED_MODEL,
+        google_api_key=GEMINI_API_KEY
+    )
+    print(f"Initialized Google Gemini Embeddings Model: {GEMINI_EMBED_MODEL}")
+        
     vector_store = Chroma(
         persist_directory=CHROMA_PERSIST_DIR,
         embedding_function=embeddings,

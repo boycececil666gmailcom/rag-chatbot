@@ -3,7 +3,7 @@ import logging
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from src.main import app
-from src.config import OLLAMA_MODEL
+from src.config import GEMINI_MODEL, GEMINI_API_KEY
 from langchain_core.documents import Document
 
 client = TestClient(app)
@@ -15,7 +15,7 @@ def test_health_endpoint():
         assert response.status_code == 200
         res = response.json()
         assert res["status"] == "ok"
-        assert res["model"] == OLLAMA_MODEL
+        assert res["model"] == GEMINI_MODEL
         assert res["platform"] == "Fintech RAG Chatbot"
 
 @patch("src.vector_db.vector_store")

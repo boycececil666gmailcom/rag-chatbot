@@ -2,7 +2,6 @@ fastapi
 uvicorn
 langchain
 langchain-community
-langchain-ollama
 ddgs
 pytest
 pytest-asyncio
@@ -10,3 +9,4 @@ httpx
 chromadb
 flashrank
 rank_bm25
+langchain-google-genai

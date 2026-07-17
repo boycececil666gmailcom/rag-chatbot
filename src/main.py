@@ -6,11 +6,10 @@ from fastapi import FastAPI, HTTPException
 
 logger = logging.getLogger(__name__)
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
 # Import configuration
-from src.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE, HOST, PORT
+from src.config import HOST, PORT, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE
 
 # Import modular components
 import src.vector_db as db
@@ -23,11 +22,20 @@ app = FastAPI(title="Fintech RAG Chatbot")
 llm = None
 llm_with_tools = None
 
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not configured in the environment variables.")
+
 try:
-    llm = ChatOllama(model=OLLAMA_MODEL, temperature=OLLAMA_TEMPERATURE)
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    llm = ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL,
+        google_api_key=GEMINI_API_KEY,
+        temperature=GEMINI_TEMPERATURE
+    )
+    print(f"Initialized Google Gemini Chat Model: {GEMINI_MODEL}")
     llm_with_tools = llm.bind_tools([retrieve_local_documents])
 except Exception as e:
-    print(f"Error initializing ChatOllama model: {e}")
+    print(f"Error initializing LLM: {e}")
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_document(request: IngestRequest):
@@ -47,7 +55,7 @@ async def run_query(request: QueryRequest):
     if llm is None or llm_with_tools is None:
         raise HTTPException(
             status_code=500, 
-            detail="ChatOllama LLM component is not initialized."
+            detail="LLM component is not initialized."
         )
     
     tool_calls_executed = []
@@ -82,7 +90,7 @@ async def run_query(request: QueryRequest):
         
         # Step 2/4: Agent Routing Decision
         print(f"\n\033[1;96m========================================================\033[0m")
-        print(f"\033[1;92m>>> [2/4] [{os.path.basename(__file__)}] Invoking ChatOllama to determine routing paths\033[0m")
+        print(f"\033[1;92m>>> [2/4] [{os.path.basename(__file__)}] Invoking LLM to determine routing paths\033[0m")
         print(f"\033[1;96m========================================================\033[0m\n")
         response = llm_with_tools.invoke(messages)
         
@@ -143,6 +151,11 @@ async def run_query(request: QueryRequest):
                 
             final_response = llm_with_tools.invoke(messages)
             response_content = final_response.content
+            if isinstance(response_content, list):
+                response_content = "".join(
+                    block.get("text", "") if isinstance(block, dict) else str(block)
+                    for block in response_content
+                )
         else:
             # Step 4/4 (Direct Path Refused)
             print(f"\n\033[1;96m========================================================\033[0m")
@@ -157,6 +170,8 @@ async def run_query(request: QueryRequest):
         )
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Query execution error: {str(e)}")
 
 @app.get("/health")
@@ -164,7 +179,7 @@ async def health_check():
     vector_ok = "ok" if db.vector_store is not None else "failed"
     return {
         "status": "ok",
-        "model": OLLAMA_MODEL,
+        "model": GEMINI_MODEL,
         "platform": "Fintech RAG Chatbot",
         "vector_store": vector_ok
     }

@@ -12,9 +12,6 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    env:
-      OLLAMA_MODEL: qwen2.5:3b
-
     steps:
     - uses: actions/checkout@v4
 
@@ -32,23 +29,12 @@ jobs:
       run: |
         bash run_unit_tests.sh
 
-    - name: Install Ollama
-      run: |
-        curl -fsSL https://ollama.com/install.sh | sh
-
-    - name: Start Ollama Service
-      run: |
-        ollama serve &
-        for i in {1..15}; do
-          curl -s http://localhost:11434 && break
-          sleep 1
-        done
-
-    - name: Pull Ollama Models
-      run: |
-        ollama pull qwen2.5:3b
-        ollama pull nomic-embed-text
-
     - name: Run E2E Tests
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
-        bash run_e2e_tests.sh
+        if [ -z "$GEMINI_API_KEY" ]; then
+          echo "Warning: GEMINI_API_KEY secret is not set. Skipping E2E tests."
+        else
+          bash run_e2e_tests.sh
+        fi
