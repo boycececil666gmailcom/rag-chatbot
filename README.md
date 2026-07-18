@@ -1,6 +1,6 @@
 # Fintech RAG Chatbot
 
-A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot for a Fintech SaaS platform utilizing the Google Gemini API and a Chroma Vector Database for document storage.
+A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot for a Fintech SaaS platform utilizing the Google Gemini API and Qdrant for document storage.
 
 ## Business & Product Flow (Overview)
 
@@ -15,7 +15,7 @@ flowchart TD
     classDef reply fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#166534;
     classDef block fill:#fee2e2,stroke:#b91c1c,stroke-width:2px,color:#991b1b;
     classDef process fill:#f9fafb,stroke:#d1d5db,stroke-width:1px,color:#374151;
-
+    
     %% Main customer interaction entry point
     Client(["📱 Client App / Customer"])
     
@@ -34,7 +34,7 @@ flowchart TD
     
     %% Ingestion background flow
     subgraph Ingestion ["Knowledge Ingestion (Offline Feed)"]
-        Admin(["Product / Ops Admin"]) -->|"Uploads FAQs & Guides"| DB[("📚 Knowledge Base (Chroma DB)")]
+        Admin(["Product / Ops Admin"]) -->|"Uploads FAQs & Guides"| DB[("📚 Knowledge Base (Qdrant)")]
     end
     
     Search -->|"Fetch context chunks"| DB
@@ -56,8 +56,8 @@ flowchart TD
 
 The backend exposes two main HTTP POST endpoints under FastAPI:
 
-- **`POST /ingest`**: Accepts raw text documents, splits them into manageable chunks, generates vector embeddings, and stores them in the local Chroma database.
-- **`POST /query`**: Accepts user queries and history. An LLM agent routes queries to retrieve platform documentation from the local database. If a query does not trigger retrieval, the direct pathway is refused to ensure responses are fully grounded in the local database.
+- **`POST /ingest`**: Accepts raw text documents, splits them into manageable chunks, generates vector embeddings, and stores them in the Qdrant database collection.
+- **`POST /query`**: Accepts user queries and history. An LLM agent routes queries to retrieve platform documentation from Qdrant. If a query does not trigger retrieval, the direct pathway is refused to ensure responses are fully grounded in the local database.
 
 ---
 
@@ -72,8 +72,8 @@ graph TD
     %% Ingest path
     Server -->|POST /ingest| Ingest[Document Ingestion Path]
     Ingest --> Split[RecursiveCharacterTextSplitter]
-    Split --> Embed[Gemini Embeddings]
-    Embed --> DB[(Chroma Vector DB)]
+    Split --> Embed[Gemini Dense / FastEmbed Sparse]
+    Embed --> DB[(Qdrant DB)]
 
     %% Query path
     Server -->|POST /query| Query[Query Processing Path]
@@ -81,29 +81,25 @@ graph TD
     Router -->|Local Context| Local[retrieve_local_documents Tool]
     Router -->|Direct Generation Refused| Direct[Refusal Response]
     
-    Local --> DenseSearch[1. Dense Search: Chroma]
-    Local --> GetDocs[2. Get All Documents]
-    GetDocs --> BM25Search[3. Sparse Search: BM25]
-    DenseSearch --> RRF[4. Reciprocal Rank Fusion - RRF]
-    BM25Search --> RRF
-    RRF --> Rerank[5. Rerank: FlashRank Cross-Encoder]
-    Rerank --> Synth[Final Synthesis]
+    Local --> HybridSearch[1. Native Qdrant Hybrid Search & RRF]
+    HybridSearch --> Rerank[2. Rerank: FlashRank Cross-Encoder]
+    Rerank --> Synth[3. Final Synthesis]
 ```
 
 ### 1. Ingestion Path
 
-The ingestion pipeline converts plain text into queryable semantic chunks inside the Chroma Vector Database.
+The ingestion pipeline converts plain text into queryable semantic chunks inside the Qdrant Database.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as Client / Ingestion Script
     participant App as FastAPI Server (main.py)
-    participant VectorStore as Chroma Vector DB
+    participant VectorStore as Qdrant DB
 
     Client->>App: POST /ingest {"text": "...", "metadata": {...}}
     Note over App: Chunks text using<br/>RecursiveCharacterTextSplitter
-    App->>VectorStore: Add document chunks with embeddings
+    App->>VectorStore: Add document chunks (Dense + Sparse embeddings)
     VectorStore-->>App: Confirmation
     App-->>Client: Response {"status": "success", "chunk_count": X}
 ```
@@ -117,11 +113,9 @@ sequenceDiagram
     autonumber
     actor User
     participant App as FastAPI Server (main.py)
-    participant BM25 as BM25Retriever (LangChain)
-    participant RRF as RRF Module (rrf.py)
     participant Reranker as FlashrankRerank (LangChain)
     participant Gemini as Google Gemini API
-    participant VectorStore as Chroma Vector DB
+    participant VectorStore as Qdrant DB
 
     User->>App: POST /query {"message": "...", "history": [...]}
     App->>Gemini: Check query context & tools
@@ -131,14 +125,8 @@ sequenceDiagram
             note right of App: Tool call: retrieve_local_documents
             Gemini-->>App: Tool call request (retrieve_local_documents)
             
-            App->>VectorStore: Get dense semantic results (k=10)
-            VectorStore-->>App: Semantic documents + distance
-            
-            App->>BM25: BM25Retriever.invoke(query)
-            BM25-->>App: Sorted sparse documents
-            
-            App->>RRF: reciprocal_rank_fusion(dense, sparse)
-            RRF-->>App: Top 5 fused documents
+            App->>VectorStore: Native similarity_search (HYBRID)
+            VectorStore-->>App: Top 5 fused (RRF) documents
             
             App->>Reranker: FlashrankRerank.compress_documents(fused_docs, query)
             Reranker-->>App: Top-2 compressed/reranked documents
@@ -170,18 +158,18 @@ sequenceDiagram
     actor Kubelet as Kubernetes Kubelet
     participant App as Chatbot Pod (FastAPI)
     participant K8s as Kubernetes API Server
-    participant Chroma as Chroma DB Pod
+    participant Qdrant as Qdrant Service
 
     Note over App: Startup & Bootstrapping
-    App->>Chroma: HTTP Liveness Check /api/v1/heartbeat
+    App->>Qdrant: HTTP Liveness Check /collections
     alt Connection Success
         rect rgb(220, 252, 231)
-            Chroma-->>App: HTTP 200 OK (heartbeat)
+            Qdrant-->>App: HTTP 200 OK
             App->>K8s: Report Ready (Readiness Probe Succeeded)
         end
     else Connection Failure
         rect rgb(254, 226, 226)
-            Chroma-->>App: Connection Error / Timeout
+            Qdrant-->>App: Connection Error / Timeout
             App->>K8s: Report Not Ready (Readiness Probe Fails)
             Note over K8s: Pod remains out of load balancer rotation
         end
@@ -203,9 +191,9 @@ sequenceDiagram
    kubectl apply -f k8s/secrets.yaml
    ```
 
-3. **Deploy Self-Hosted Chroma DB**:
+3. **Deploy Self-Hosted Qdrant DB**:
    ```bash
-   kubectl apply -f k8s/chromadb-statefulset.yaml
+   kubectl apply -f k8s/qdrant-statefulset.yaml
    ```
 
 4. **Build and Deploy the FastAPI Web Server**:

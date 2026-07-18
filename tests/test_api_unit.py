@@ -3,7 +3,7 @@ import logging
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from src.chatbot_backend.main import app
-from src.chatbot_backend.config import GEMINI_MODEL, GEMINI_API_KEY
+from src.chatbot_backend.config import GEMINI_MODEL
 from langchain_core.documents import Document
 
 client = TestClient(app)
@@ -34,22 +34,6 @@ def test_ingest_endpoint(mock_vector_store):
     assert res["status"] == "success"
     assert res["chunk_count"] > 0
     mock_vector_store.add_documents.assert_called_once()
-
-def test_reciprocal_rank_fusion():
-    """Verify correctness of reciprocal rank fusion (RRF) algorithm."""
-    from src.chatbot_backend.rrf import reciprocal_rank_fusion
-    
-    doc_a = Document(page_content="A", metadata={})
-    doc_b = Document(page_content="B", metadata={})
-    
-    # Dense: doc_a first (0.1), doc_b second (0.4)
-    dense_results = [(doc_a, 0.1), (doc_b, 0.4)]
-    # Sparse: doc_b first (10.0), doc_a second (2.0)
-    sparse_results = [(doc_b, 10.0), (doc_a, 2.0)]
-    
-    fused = reciprocal_rank_fusion(dense_results, sparse_results, k=60, top_n=2)
-    assert len(fused) == 2
-    assert fused[0].page_content in ["A", "B"]
 
 @patch("src.chatbot_backend.main.llm_with_tools")
 def test_query_endpoint_refusal(mock_llm_with_tools):
@@ -88,13 +72,9 @@ def test_query_endpoint_retrieval(mock_llm_with_tools, mock_vector_store):
     
     mock_llm_with_tools.invoke.side_effect = [mock_res_tool, mock_res_answer]
     
-    # Mock Chroma vector database retrieval
+    # Mock Qdrant vector database hybrid retrieval
     doc = Document(page_content="Wire transfer limits are set to $10,000.", metadata={})
-    mock_vector_store.similarity_search_with_score.return_value = [(doc, 0.1)]
-    mock_vector_store.get.return_value = {
-        "documents": ["Wire transfer limits are set to $10,000."],
-        "metadatas": [{}]
-    }
+    mock_vector_store.similarity_search.return_value = [doc]
     
     response = client.post(
         "/query",

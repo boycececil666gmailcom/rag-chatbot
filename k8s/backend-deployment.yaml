@@ -39,11 +39,9 @@ spec:
             - containerPort: 8000
               name: http
           env:
-            # Connect to the self-hosted Chroma DB headless service
-            - name: CHROMA_SERVER_HOST
-              value: "chromadb-service"
-            - name: CHROMA_SERVER_PORT
-              value: "8000"
+            # Connect to the self-hosted Qdrant headless service
+            - name: QDRANT_URL
+              value: "http://qdrant-service:6333"
             # Set default active models
             - name: GEMINI_MODEL
               value: "gemini-3.1-flash-lite"

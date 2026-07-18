@@ -3,11 +3,11 @@
 # ==============================================================================
 
 # --- Stage 1: Build dependencies ---
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install compilation tools required for chromadb and flashrank
+# Install compilation tools required for flashrank
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -15,14 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY src/chatbot_backend/requirements.txt /app/src/chatbot_backend/requirements.txt
 
 # Install dependencies into a local directory to copy to the runner stage
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -r /app/src/chatbot_backend/requirements.txt
 
 
 # --- Stage 2: Production runner ---
-FROM python:3.11-slim AS runner
+FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN groupadd -g 10001 appgroup && \
 
 # Copy installed Python packages from the builder stage
 COPY --from=builder /root/.local /home/appuser/.local
-COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup src/chatbot_backend/ /app/src/chatbot_backend/
 
 # Update PATH variable to include user's local bin
 ENV PATH=/home/appuser/.local/bin:$PATH

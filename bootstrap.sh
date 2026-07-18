@@ -33,13 +33,13 @@ fi
 echo "Applying Kubernetes manifests..."
 kubectl apply -f k8s/namespace.yaml || exit 1
 kubectl apply -f k8s/secrets.yaml || exit 1
-kubectl apply -f k8s/chromadb-statefulset.yaml || exit 1
+kubectl apply -f k8s/qdrant-statefulset.yaml || exit 1
 kubectl apply -f k8s/backend-deployment.yaml || exit 1
 kubectl apply -f k8s/gateway-deployment.yaml || exit 1
 kubectl apply -f k8s/ingress.yaml || exit 1
 
 echo "Waiting for deployments to roll out..."
-kubectl rollout status statefulset/chromadb -n fintech-chatbot --timeout=90s || exit 1
+kubectl rollout status statefulset/qdrant -n fintech-chatbot --timeout=90s || exit 1
 kubectl rollout status deployment/chatbot-backend -n fintech-chatbot --timeout=90s || exit 1
 kubectl rollout status deployment/chatbot-gateway -n fintech-chatbot --timeout=90s || exit 1
 

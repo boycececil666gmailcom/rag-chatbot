@@ -3,10 +3,9 @@ uvicorn
 langchain
 langchain-community
 ddgs
-pytest
-pytest-asyncio
 httpx
 langchain-qdrant
 fastembed
 flashrank
 langchain-google-genai
+

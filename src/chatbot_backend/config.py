@@ -19,11 +19,6 @@ GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.0"))
 PORT = int(os.getenv("PORT", "8000"))
 HOST = os.getenv("HOST", "0.0.0.0")
 
-# Chroma DB settings
-CHROMA_SERVER_HOST = os.getenv("CHROMA_SERVER_HOST")
-CHROMA_SERVER_PORT = os.getenv("CHROMA_SERVER_PORT")
-
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
-if not os.path.isabs(CHROMA_PERSIST_DIR):
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    CHROMA_PERSIST_DIR = os.path.abspath(os.path.join(project_root, CHROMA_PERSIST_DIR))
+# Qdrant settings
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")

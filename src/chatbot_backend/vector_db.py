@@ -1,23 +1,21 @@
 import os
-from langchain_community.vectorstores import Chroma
+import sys
+from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from src.chatbot_backend.config import CHROMA_PERSIST_DIR, GEMINI_API_KEY, GEMINI_EMBED_MODEL, CHROMA_SERVER_HOST, CHROMA_SERVER_PORT
-
-# Ensure database directory exists if running locally
-if not CHROMA_SERVER_HOST:
-    os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
+from src.chatbot_backend.config import QDRANT_URL, QDRANT_API_KEY, GEMINI_API_KEY, GEMINI_EMBED_MODEL
 
 # Setup text splitter
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 
 # Initialize embeddings and vector DB lazily
 embeddings = None
+sparse_embeddings = None
 vector_store = None
 init_error = None
 
 def get_vector_store():
-    global vector_store, init_error, embeddings
+    global vector_store, init_error, embeddings, sparse_embeddings
     if vector_store is not None:
         return vector_store
         
@@ -33,23 +31,44 @@ def get_vector_store():
             )
             print(f"Initialized Google Gemini Embeddings Model: {GEMINI_EMBED_MODEL}")
             
-        if CHROMA_SERVER_HOST:
-            import chromadb
-            port = int(CHROMA_SERVER_PORT) if CHROMA_SERVER_PORT else 8000
-            print(f"Connecting to remote self-hosted Chroma DB server at http://{CHROMA_SERVER_HOST}:{port}")
-            client = chromadb.HttpClient(host=CHROMA_SERVER_HOST, port=port)
-            vector_store = Chroma(
-                client=client,
+        if sparse_embeddings is None:
+            sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+            print("Initialized FastEmbed BM25 Sparse Embeddings Model")
+            
+        if "pytest" in sys.modules or QDRANT_URL == ":memory:":
+            print("Running in-memory Qdrant Client for testing...")
+            vector_store = QdrantVectorStore.from_documents(
+                [],
+                embedding=embeddings,
+                sparse_embedding=sparse_embeddings,
+                location=":memory:",
                 collection_name="local_rag_documents",
-                embedding_function=embeddings
+                retrieval_mode=RetrievalMode.HYBRID
             )
+        elif QDRANT_URL:
+            print(f"Connecting to remote Qdrant DB server at {QDRANT_URL}")
+            try:
+                vector_store = QdrantVectorStore.from_existing_collection(
+                    url=QDRANT_URL,
+                    api_key=QDRANT_API_KEY,
+                    collection_name="local_rag_documents",
+                    embedding=embeddings,
+                    sparse_embedding=sparse_embeddings,
+                    retrieval_mode=RetrievalMode.HYBRID
+                )
+            except Exception:
+                print("Collection 'local_rag_documents' not found. Creating a new one...")
+                vector_store = QdrantVectorStore.from_documents(
+                    [],
+                    url=QDRANT_URL,
+                    api_key=QDRANT_API_KEY,
+                    collection_name="local_rag_documents",
+                    embedding=embeddings,
+                    sparse_embedding=sparse_embeddings,
+                    retrieval_mode=RetrievalMode.HYBRID
+                )
         else:
-            print(f"Initializing local Chroma DB with storage path: {CHROMA_PERSIST_DIR}")
-            vector_store = Chroma(
-                persist_directory=CHROMA_PERSIST_DIR,
-                embedding_function=embeddings,
-                collection_name="local_rag_documents"
-            )
+            raise ValueError("QDRANT_URL environment variable is not configured.")
         init_error = None
         return vector_store
     except Exception as e:
@@ -64,7 +83,7 @@ except Exception:
     pass
 
 def add_document_text(text: str, metadata: dict = None) -> int:
-    """Chunks text and adds documents to Chroma vector database. Returns chunk count."""
+    """Chunks text and adds documents to Qdrant vector database. Returns chunk count."""
     store = get_vector_store()
     chunks = text_splitter.split_text(text)
     documents = [

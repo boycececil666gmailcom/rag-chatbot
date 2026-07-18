@@ -1,27 +1,6 @@
-from typing import List
 from langchain_core.tools import tool
-from langchain_core.documents import Document
 import src.chatbot_backend.vector_db as db
-from langchain_community.retrievers import BM25Retriever
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-from src.chatbot_backend.rrf import reciprocal_rank_fusion
-
-# Setup tools
-
-def get_all_documents() -> List[Document]:
-    """Helper to fetch all documents stored in the Chroma vector database."""
-    try:
-        store = db.get_vector_store()
-    except Exception:
-        return []
-    results = store.get(include=["documents", "metadatas"])
-    docs = []
-    if results and "documents" in results:
-        texts = results["documents"]
-        metas = results["metadatas"] or [{}] * len(texts)
-        for text, meta in zip(texts, metas):
-            docs.append(Document(page_content=text, metadata=meta or {}))
-    return docs
 
 @tool
 def retrieve_local_documents(query: str) -> str:
@@ -33,36 +12,22 @@ def retrieve_local_documents(query: str) -> str:
     except Exception as e:
         return f"Error: Local Vector database is not initialized: {e}"
     try:
-        # 1. Retrieve dense candidates (top 10)
-        dense_results = store.similarity_search_with_score(query, k=10)
+        # Perform hybrid search natively in Qdrant (which uses RRF under the hood)
+        docs = store.similarity_search(query, k=5)
         
-        # 2. Get all documents from vector store to build BM25 index
-        all_documents = get_all_documents()
-        
-        # 3. Perform BM25 sparse search (top 10)
-        bm25_results = []
-        if all_documents:
-            retriever = BM25Retriever.from_documents(all_documents)
-            retriever.k = 10
-            bm25_docs = retriever.invoke(query)
-            bm25_results = [(doc, float(len(bm25_docs) - i)) for i, doc in enumerate(bm25_docs)]
-            
-        if not dense_results and not bm25_results:
+        if not docs:
             return "No matching local documents found."
             
-        # 4. Fuse using Reciprocal Rank Fusion (RRF) from src.rrf
-        fused_docs = reciprocal_rank_fusion(dense_results, bm25_results, k=60, top_n=5)
-        
-        # 5. Apply FlashRank Cross-Encoder reranker using LangChain's FlashrankRerank
+        # Apply FlashRank Cross-Encoder reranker using LangChain's FlashrankRerank
         try:
             compressor = FlashrankRerank(top_n=2)
-            reranked_docs = compressor.compress_documents(fused_docs, query)
+            reranked_docs = compressor.compress_documents(docs, query)
         except Exception as rerank_err:
             import logging
             logging.getLogger(__name__).warning(
-                f"FlashRank reranking failed, falling back to RRF rankings: {rerank_err}"
+                f"FlashRank reranking failed, falling back to database rankings: {rerank_err}"
             )
-            reranked_docs = fused_docs[:2]
+            reranked_docs = docs[:2]
         
         # Format top chunks as output context
         context_list = []
