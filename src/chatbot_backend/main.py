@@ -12,7 +12,7 @@ from src.chatbot_backend.config import HOST, PORT, GEMINI_API_KEY, GEMINI_MODEL,
 
 # Import modular components
 import src.chatbot_backend.vector_db as db
-from src.chatbot_backend.tools import retrieve_local_documents, retrieve_local_documents_raw
+from src.chatbot_backend.tools import retrieve_local_documents
 from src.chatbot_backend.models import MessageSchema, QueryRequest, QueryResponse, IngestRequest, IngestResponse, ToolQueryArgs
 
 app = FastAPI(title="AI RAG Search Robot Backend")
@@ -118,8 +118,28 @@ async def run_query(request: QueryRequest):
                 # Run actual tool
                 try:
                     if tool_name == "retrieve_local_documents":
-                        tool_output, doc_list = retrieve_local_documents_raw(q_val)
-                        retrieved_documents.extend(doc_list)
+                        tool_output = retrieve_local_documents.invoke(q_val)
+                        
+                        # Record/query the documents directly here to keep tools.py unmodified
+                        try:
+                            store = db.get_vector_store()
+                            docs = store.similarity_search(q_val, k=5)
+                            if docs:
+                                from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
+                                try:
+                                    compressor = FlashrankRerank(top_n=2)
+                                    reranked_docs = compressor.compress_documents(docs, q_val)
+                                except Exception:
+                                    reranked_docs = docs[:2]
+                                
+                                for doc in reranked_docs:
+                                    cleaned_meta = {k: (v.item() if hasattr(v, "item") else v) for k, v in doc.metadata.items()}
+                                    retrieved_documents.append({
+                                        "page_content": doc.page_content,
+                                        "metadata": cleaned_meta
+                                    })
+                        except Exception as record_err:
+                            logger.error(f"Failed to record retrieved documents: {record_err}")
                 except Exception as tool_err:
                     logger.error(f"Tool execution failed: {tool_err}. Triggering direct fallback.")
                     tool_output = f"Error: Failed execution context fallback: {str(tool_err)}"
