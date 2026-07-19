@@ -12,7 +12,7 @@ from src.chatbot_backend.config import HOST, PORT, GEMINI_API_KEY, GEMINI_MODEL,
 
 # Import modular components
 import src.chatbot_backend.vector_db as db
-from src.chatbot_backend.tools import retrieve_local_documents
+from src.chatbot_backend.tools import retrieve_local_documents, retrieve_local_documents_raw
 from src.chatbot_backend.models import MessageSchema, QueryRequest, QueryResponse, IngestRequest, IngestResponse, ToolQueryArgs
 
 app = FastAPI(title="AI RAG Search Robot Backend")
@@ -58,6 +58,7 @@ async def run_query(request: QueryRequest):
         )
     
     tool_calls_executed = []
+    retrieved_documents = []
     
     try:
         # Step 1/4: Payload mapping
@@ -117,7 +118,8 @@ async def run_query(request: QueryRequest):
                 # Run actual tool
                 try:
                     if tool_name == "retrieve_local_documents":
-                        tool_output = retrieve_local_documents.invoke(q_val)
+                        tool_output, doc_list = retrieve_local_documents_raw(q_val)
+                        retrieved_documents.extend(doc_list)
                 except Exception as tool_err:
                     logger.error(f"Tool execution failed: {tool_err}. Triggering direct fallback.")
                     tool_output = f"Error: Failed execution context fallback: {str(tool_err)}"
@@ -159,7 +161,8 @@ async def run_query(request: QueryRequest):
         print("Query execution completed successfully.\n")
         return QueryResponse(
             response=response_content,
-            tool_calls_executed=tool_calls_executed
+            tool_calls_executed=tool_calls_executed,
+            retrieved_documents=retrieved_documents
         )
         
     except Exception as e:

@@ -84,6 +84,9 @@ def test_query_endpoint_retrieval(mock_llm_with_tools, mock_vector_store):
     res = response.json()
     assert "10,000" in res["response"]
     assert "retrieve_local_documents" in res["tool_calls_executed"]
+    assert len(res["retrieved_documents"]) > 0
+    assert res["retrieved_documents"][0]["page_content"] == "Wire transfer limits are set to $10,000."
+
 
 @patch("src.chatbot_backend.main.llm_with_tools")
 def test_query_endpoint_invalid_tool_safeguard(mock_llm_with_tools, caplog):
