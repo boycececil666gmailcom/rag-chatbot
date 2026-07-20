@@ -18,4 +18,7 @@ def safeguard_node(state: AgentState) -> dict:
         HumanMessage(content=state["message"])
     ]
     response = llm.invoke(messages)
-    return {"draft_response": response.content}
+    content = response.content
+    if isinstance(content, list):
+        content = "".join(part if isinstance(part, str) else part.get("text", "") for part in content)
+    return {"draft_response": content}

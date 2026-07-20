@@ -1,5 +1,5 @@
 import logging
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage
 from src.theme_based_rag_backend.config import CHATBOT_THEME
 from src.theme_based_rag_backend.agent_flow.state import AgentState
 
@@ -40,10 +40,13 @@ def critique_node(state: AgentState) -> dict:
             f"Otherwise, output a detailed explanation of what is wrong or hallucinated in the response."
         )
     
-    messages = [SystemMessage(content=critique_prompt)]
+    messages = [HumanMessage(content=critique_prompt)]
     response = llm.invoke(messages)
     
-    content = response.content.strip()
+    content = response.content
+    if isinstance(content, list):
+        content = "".join(part if isinstance(part, str) else part.get("text", "") for part in content)
+    content = content.strip()
     if "pass" in content.lower():
         status = "PASS"
         reason = None

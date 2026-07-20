@@ -56,7 +56,10 @@ def rag_qa_node(state: AgentState) -> dict:
         messages.append(HumanMessage(content=query))
         
     response = llm.invoke(messages)
+    content = response.content
+    if isinstance(content, list):
+        content = "".join(part if isinstance(part, str) else part.get("text", "") for part in content)
     return {
-        "draft_response": response.content,
+        "draft_response": content,
         "retrieved_documents": retrieved_docs
     }
