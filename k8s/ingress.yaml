@@ -1,21 +1,21 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: chatbot-ingress
-  namespace: fintech-chatbot
+  name: theme-based-rag-ingress
+  namespace: theme-based-rag-workflow
   annotations:
     kubernetes.io/ingress.class: "nginx"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   rules:
-    - host: fintech-chatbot.local # In production, replace with your actual registered domain name
+    - host: theme-based-rag-workflow.local # In production, replace with your actual registered domain name
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: chatbot-gateway-service
+                name: theme-based-rag-gateway-service
                 port:
                   number: 80

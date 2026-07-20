@@ -6,12 +6,12 @@ from fastapi import FastAPI, HTTPException
 
 logger = logging.getLogger(__name__)
 
-from src.chatbot_backend.config import HOST, PORT, GEMINI_MODEL
-import src.chatbot_backend.vector_db as db
-from src.chatbot_backend.models import QueryRequest, QueryResponse, IngestRequest, IngestResponse
-from src.chatbot_backend.agent_flow import agent_graph
+from src.theme_based_rag_backend.config import HOST, PORT, GEMINI_MODEL
+import src.theme_based_rag_backend.vector_db as db
+from src.theme_based_rag_backend.models import QueryRequest, QueryResponse, IngestRequest, IngestResponse
+from src.theme_based_rag_backend.agent_flow import agent_graph
 
-app = FastAPI(title="AI RAG Search Robot Backend")
+app = FastAPI(title="Theme-Based RAG Workflow Backend")
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_document(request: IngestRequest):
@@ -73,9 +73,9 @@ async def health_check():
     return {
         "status": "ok",
         "model": GEMINI_MODEL,
-        "platform": "AI RAG Search Robot",
+        "platform": "Theme-Based RAG Workflow",
         "vector_store": vector_ok
     }
 
 if __name__ == "__main__":
-    uvicorn.run("src.chatbot_backend.main:app", host=HOST, port=PORT, reload=True)
+    uvicorn.run("src.theme_based_rag_backend.main:app", host=HOST, port=PORT, reload=True)

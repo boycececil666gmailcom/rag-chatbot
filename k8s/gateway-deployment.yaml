@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: chatbot-gateway-service
-  namespace: fintech-chatbot
+  name: theme-based-rag-gateway-service
+  namespace: theme-based-rag-workflow
   labels:
-    app: chatbot-gateway
+    app: theme-based-rag-gateway
 spec:
   type: ClusterIP
   ports:
@@ -12,36 +12,36 @@ spec:
       targetPort: 8080
       name: http
   selector:
-    app: chatbot-gateway
+    app: theme-based-rag-gateway
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: chatbot-gateway
-  namespace: fintech-chatbot
+  name: theme-based-rag-gateway
+  namespace: theme-based-rag-workflow
   labels:
-    app: chatbot-gateway
+    app: theme-based-rag-gateway
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: chatbot-gateway
+      app: theme-based-rag-gateway
   template:
     metadata:
       labels:
-        app: chatbot-gateway
+        app: theme-based-rag-gateway
     spec:
       containers:
-        - name: chatbot-gateway
-          image: chatbot-gateway:latest
+        - name: theme-based-rag-gateway
+          image: theme-based-rag-gateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
               name: http
           env:
             # Route requests internally to the backend service (ClusterIP service on port 80)
-            - name: CHATBOT_BACKEND_URL
-              value: "http://chatbot-backend-service"
+            - name: RAG_BACKEND_URL
+              value: "http://theme-based-rag-backend-service"
             - name: HOST
               value: "0.0.0.0"
             - name: PORT

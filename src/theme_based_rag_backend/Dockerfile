@@ -1,5 +1,5 @@
 # ==============================================================================
-# Multi-stage Dockerfile for Fintech RAG Chatbot Backend
+# Multi-stage Dockerfile for Theme-Based RAG Workflow Backend
 # ==============================================================================
 
 # --- Stage 1: Build dependencies ---
@@ -15,10 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY src/chatbot_backend/requirements.txt /app/src/chatbot_backend/requirements.txt
+COPY src/theme_based_rag_backend/requirements.txt /app/src/theme_based_rag_backend/requirements.txt
 
 # Install dependencies into a local directory to copy to the runner stage
-RUN pip install --no-cache-dir --user -r /app/src/chatbot_backend/requirements.txt
+RUN pip install --no-cache-dir --user -r /app/src/theme_based_rag_backend/requirements.txt
 
 
 # --- Stage 2: Production runner ---
@@ -32,7 +32,7 @@ RUN groupadd -g 10001 appgroup && \
 
 # Copy installed Python packages from the builder stage
 COPY --from=builder /root/.local /home/appuser/.local
-COPY --chown=appuser:appgroup src/chatbot_backend/ /app/src/chatbot_backend/
+COPY --chown=appuser:appgroup src/theme_based_rag_backend/ /app/src/theme_based_rag_backend/
 
 # Update PATH variable to include user's local bin
 ENV PATH=/home/appuser/.local/bin:$PATH
@@ -45,4 +45,4 @@ EXPOSE 8000
 USER appuser
 
 # Run Chatbot Backend using uvicorn
-CMD ["uvicorn", "src.chatbot_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.theme_based_rag_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,10 +1,10 @@
-# RAG Chatbot
+# Theme-Based RAG Workflow
 
 A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot utilizing the Google Gemini API and Qdrant for document storage.
 
 ## Business & Product Flow (Overview)
 
-Below is a simplified view of how information flows through the RAG Chatbot system, designed for product managers and operations:
+Below is a simplified view of how information flows through the Theme-Based RAG Workflow system, designed for product managers and operations:
 
 ```mermaid
 flowchart TD
@@ -241,7 +241,7 @@ docker run -d -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage
 Run the backend API (FastAPI) on port 8000:
 ```bash
 # Ensure virtualenv is active
-python -m uvicorn src.chatbot_backend.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn src.theme_based_rag_backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 5. Start API Gateway
@@ -249,5 +249,5 @@ python -m uvicorn src.chatbot_backend.main:app --host 0.0.0.0 --port 8000 --relo
 Run the gateway API (FastAPI proxy) on port 8080:
 ```bash
 # Ensure virtualenv is active
-python -m uvicorn src.api_gateway.main:app --host 0.0.0.0 --port 8080 --reload
+python -m uvicorn src.theme_based_rag_gateway.main:app --host 0.0.0.0 --port 8080 --reload
 ```

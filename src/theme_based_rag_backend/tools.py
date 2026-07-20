@@ -1,5 +1,5 @@
 from langchain_core.tools import tool
-import src.chatbot_backend.vector_db as db
+import src.theme_based_rag_backend.vector_db as db
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
 
 _compressor = None

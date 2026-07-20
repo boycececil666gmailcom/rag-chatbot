@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: qdrant-service
-  namespace: fintech-chatbot
+  namespace: theme-based-rag-workflow
   labels:
     app: qdrant
 spec:
@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qdrant
-  namespace: fintech-chatbot
+  namespace: theme-based-rag-workflow
 spec:
   serviceName: "qdrant-service"
   replicas: 1

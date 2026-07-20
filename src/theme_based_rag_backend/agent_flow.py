@@ -4,8 +4,8 @@ from typing import TypedDict, List, Literal, Optional
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.chatbot_backend.config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE, CHATBOT_THEME
-from src.chatbot_backend.tools import retrieve_local_documents
+from src.theme_based_rag_backend.config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE, CHATBOT_THEME
+from src.theme_based_rag_backend.tools import retrieve_local_documents
 from langgraph.graph import StateGraph, END
 
 logger = logging.getLogger(__name__)

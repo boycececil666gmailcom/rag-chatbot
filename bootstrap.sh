@@ -16,10 +16,10 @@ log_step "[2/4]" "Building Local Docker Images"
 docker info >/dev/null 2>&1 || { echo -e "\033[1;31mError: Docker daemon is not running. Please start Docker and try again.\033[0m"; exit 1; }
 
 echo "Building core chatbot backend image..."
-docker build -t chatbot-backend:latest -f src/chatbot_backend/Dockerfile . || exit 1
+docker build -t theme-based-rag-backend:latest -f src/theme_based_rag_backend/Dockerfile . || exit 1
 
 echo "Building API gateway image..."
-docker build -t chatbot-gateway:latest -f src/api_gateway/Dockerfile . || exit 1
+docker build -t theme-based-rag-gateway:latest -f src/theme_based_rag_gateway/Dockerfile . || exit 1
 
 # Step 3: Deploy manifests to Kubernetes
 log_step "[3/4]" "Deploying to Kubernetes Cluster"
@@ -39,14 +39,14 @@ kubectl apply -f k8s/gateway-deployment.yaml || exit 1
 kubectl apply -f k8s/ingress.yaml || exit 1
 
 echo "Waiting for deployments to roll out..."
-kubectl rollout status statefulset/qdrant -n fintech-chatbot --timeout=90s || exit 1
-kubectl rollout status deployment/chatbot-backend -n fintech-chatbot --timeout=90s || exit 1
-kubectl rollout status deployment/chatbot-gateway -n fintech-chatbot --timeout=90s || exit 1
+kubectl rollout status statefulset/qdrant -n theme-based-rag-workflow --timeout=90s || exit 1
+kubectl rollout status deployment/theme-based-rag-backend -n theme-based-rag-workflow --timeout=90s || exit 1
+kubectl rollout status deployment/theme-based-rag-gateway -n theme-based-rag-workflow --timeout=90s || exit 1
 
 # Step 4: Port-forward the gateway service
 log_step "[4/4]" "Starting API Gateway Port-Forwarding (port 8080)"
 echo "Access the chatbot gateway at http://localhost:8080"
 echo "Press Ctrl+C to stop port-forwarding."
-kubectl port-forward service/chatbot-gateway-service -n fintech-chatbot 8080:80
+kubectl port-forward service/theme-based-rag-gateway-service -n theme-based-rag-workflow 8080:80
 
 
