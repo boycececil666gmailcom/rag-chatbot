@@ -1,10 +1,9 @@
 import pytest
 import logging
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.chatbot_backend.main import app
 from src.chatbot_backend.config import GEMINI_MODEL
-from langchain_core.documents import Document
 
 client = TestClient(app)
 
@@ -35,13 +34,15 @@ def test_ingest_endpoint(mock_vector_store):
     assert res["chunk_count"] > 0
     mock_vector_store.add_documents.assert_called_once()
 
-@patch("src.chatbot_backend.main.llm_with_tools")
-def test_query_endpoint_refusal(mock_llm_with_tools):
-    """Verify that queries that do not trigger tool calls are directly refused."""
-    mock_res = MagicMock()
-    mock_res.content = "Unrelated response text."
-    mock_res.tool_calls = []
-    mock_llm_with_tools.invoke.return_value = mock_res
+@patch("src.chatbot_backend.main.agent_graph.ainvoke")
+def test_query_endpoint_refusal(mock_ainvoke):
+    """Verify that out-of-theme queries trigger refusal pathway response."""
+    mock_ainvoke.return_value = {
+        "draft_response": "I can only help with inquiries related to the configured theme.",
+        "category": "refuse",
+        "retrieved_documents": None,
+        "attempts": 1
+    }
     
     response = client.post(
         "/query",
@@ -49,32 +50,19 @@ def test_query_endpoint_refusal(mock_llm_with_tools):
     )
     assert response.status_code == 200
     res = response.json()
-    assert "knowledge base" in res["response"]
+    assert "only help" in res["response"].lower() or "configured theme" in res["response"].lower()
     assert res["tool_calls_executed"] == []
+    mock_ainvoke.assert_called_once()
 
-@patch("src.chatbot_backend.vector_db.vector_store")
-@patch("src.chatbot_backend.main.llm_with_tools")
-def test_query_endpoint_retrieval(mock_llm_with_tools, mock_vector_store):
-    """Verify retrieval-based queries and final answer synthesis."""
-    # First call: LLM decides to call tool
-    mock_res_tool = MagicMock()
-    mock_res_tool.content = ""
-    mock_res_tool.tool_calls = [{
-        "name": "retrieve_local_documents",
-        "args": {"query": "wire transfer"},
-        "id": "call_99"
-    }]
-    
-    # Second call: LLM synthesizes final answer
-    mock_res_answer = MagicMock()
-    mock_res_answer.content = "The wire transfer limit is $10,000."
-    mock_res_answer.tool_calls = []
-    
-    mock_llm_with_tools.invoke.side_effect = [mock_res_tool, mock_res_answer]
-    
-    # Mock Qdrant vector database hybrid retrieval
-    doc = Document(page_content="Wire transfer limits are set to $10,000.", metadata={})
-    mock_vector_store.similarity_search.return_value = [doc]
+@patch("src.chatbot_backend.main.agent_graph.ainvoke")
+def test_query_endpoint_retrieval(mock_ainvoke):
+    """Verify retrieval-based queries return generated response with tool outputs."""
+    mock_ainvoke.return_value = {
+        "draft_response": "The wire transfer limit is $10,000.",
+        "category": "rag",
+        "retrieved_documents": "Wire transfer limits are set to $10,000.",
+        "attempts": 1
+    }
     
     response = client.post(
         "/query",
@@ -85,35 +73,5 @@ def test_query_endpoint_retrieval(mock_llm_with_tools, mock_vector_store):
     assert "10,000" in res["response"]
     assert "retrieve_local_documents" in res["tool_calls_executed"]
     assert res["retrieved_documents"] is not None
-    assert "Wire transfer limits are set to $10,000." in res["retrieved_documents"]
-
-
-
-@patch("src.chatbot_backend.main.llm_with_tools")
-def test_query_endpoint_invalid_tool_safeguard(mock_llm_with_tools, caplog):
-    """Verify invalid tool call safeguarding and fallback triggers."""
-    mock_res_tool = MagicMock()
-    mock_res_tool.content = ""
-    mock_res_tool.tool_calls = [{
-        "name": "hallucinated_tool_abc",
-        "args": {"query": "test"},
-        "id": "call_err"
-    }]
-    
-    # After invalid tool call is intercepted, LLM is re-invoked. It returns direct response
-    # which is then overridden by refusal (since no valid tool was executed).
-    mock_res_answer = MagicMock()
-    mock_res_answer.content = "Fallback generated answer"
-    mock_res_answer.tool_calls = []
-    mock_llm_with_tools.invoke.side_effect = [mock_res_tool, mock_res_answer]
-    
-    with caplog.at_level(logging.WARNING):
-        response = client.post(
-            "/query",
-            json={"message": "Query triggering bad tool name", "history": []}
-        )
-    assert response.status_code == 200
-    res = response.json()
-    assert res["response"] == "Fallback generated answer"
-    assert res["tool_calls_executed"] == []
-    assert "Hallucinated tool call" in caplog.text
+    assert "limits are set" in res["retrieved_documents"]
+    mock_ainvoke.assert_called_once()

@@ -98,13 +98,17 @@ graph TD
 
     %% Query path
     Server -->|POST /query| Query[Query Processing Path]
-    Query --> Router{Gemini Agent Router}
-    Router -->|Local Context| Local[retrieve_local_documents Tool]
-    Router -->|Direct Generation Refused| Direct[Refusal Response]
+    Query --> Graph[LangGraph Agent Flow]
+    Graph --> Classifier{Classifier Node}
     
-    Local --> HybridSearch[1. Native Qdrant Hybrid Search & RRF]
-    HybridSearch --> Rerank[2. Rerank: FlashRank Cross-Encoder]
-    Rerank --> Synth[3. Final Synthesis]
+    Classifier -->|rag| QA[RAG QA Node]
+    Classifier -->|refuse| Safeguard[Safeguard Node]
+    
+    QA --> Critique[Critique Node]
+    Safeguard --> Critique
+    
+    Critique -->|PASS / Max Attempts| End([End & Return])
+    Critique -->|FAIL| Classifier
 ```
 
 ### 1. Ingestion Path
@@ -137,41 +141,57 @@ sequenceDiagram
 
 ### 2. Query Path
 
-When a query is received, the Gemini model is invoked with tool-calling capabilities. It dynamically decides whether it needs to query the local vector database for platform facts or answer directly.
+When a query is received, the request is dispatched to a stateful LangGraph agent workflow containing dynamic classification, generation nodes, and grounding evaluation:
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
     participant App as FastAPI Server (main.py)
-    participant Reranker as FlashrankRerank (LangChain)
-    participant Gemini as Google Gemini API
+    participant Graph as LangGraph Agent (agent_flow.py)
+    participant Classifier as Classifier Node (Gemini)
+    participant QA as RAG QA Node (Gemini)
+    participant Safeguard as Safeguard Node (Gemini)
+    participant Critique as Critique Node (Gemini)
     participant VectorStore as Qdrant DB
 
     User->>App: POST /query {"message": "...", "history": [...]}
-    App->>Gemini: Check query context & tools
+    App->>Graph: ainvoke(state)
     
-    alt Path A: Needs Local Document Context
-        rect rgb(224, 242, 254)
-            note right of App: Tool call: retrieve_local_documents
-            Gemini-->>App: Tool call request (retrieve_local_documents)
-            
-            App->>VectorStore: Native similarity_search (HYBRID)
-            VectorStore-->>App: Top 5 fused (RRF) documents
-            
-            App->>Reranker: FlashrankRerank.compress_documents(fused_docs, query)
-            Reranker-->>App: Top-2 compressed/reranked documents
-            
-            App->>Gemini: Prompt with top 2 reranked context chunks
-            Gemini-->>App: Final answer text
+    loop Max 3 attempts
+        Graph->>Classifier: Determine category (rag / refuse)
+        Classifier-->>Graph: Category result
+        
+        alt Path A: category is 'rag'
+            rect rgb(224, 242, 254)
+                Graph->>VectorStore: retrieve_local_documents
+                VectorStore-->>Graph: Chunks & FlashRank Reranked Docs
+                Graph->>QA: Generate draft response using retrieved docs
+                QA-->>Graph: draft_response
+            end
+        else Path B: category is 'refuse'
+            rect rgb(254, 226, 226)
+                Graph->>Safeguard: Generate polite refusal response
+                Safeguard-->>Graph: draft_response
+            end
         end
-    else Path B: Direct Generation Refused
-        rect rgb(254, 226, 226)
-            note right of App: Refusal path
-            App-->>User: Refusal response (Pre-trained answering disabled)
+        
+        Graph->>Critique: Evaluate draft_response groundedness
+        
+        alt Validation Passes (or category is refuse, or max attempts reached)
+            rect rgb(220, 252, 231)
+                Critique-->>Graph: Status: PASS
+                Note over Graph: Exit loop
+            end
+        else Validation Fails
+            rect rgb(254, 226, 226)
+                Critique-->>Graph: Status: FAIL (Reason details)
+                Note over Graph: Increment attempts & loop back to Classifier
+            end
         end
     end
     
+    Graph-->>App: Final state result
     App-->>User: Response {"response": "...", "tool_calls_executed": [...]}
 ```
 

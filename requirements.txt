@@ -10,3 +10,4 @@ langchain-qdrant
 fastembed
 flashrank
 langchain-google-genai
+langgraph
