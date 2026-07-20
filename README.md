@@ -1,6 +1,6 @@
 # RAG Chatbot
 
-A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot for a Fintech SaaS platform utilizing the Google Gemini API and Qdrant for document storage.
+A modular, stateless Retrieval-Augmented Generation (RAG) customer service chatbot utilizing the Google Gemini API and Qdrant for document storage.
 
 ## Business & Product Flow (Overview)
 
@@ -22,15 +22,15 @@ flowchart TD
     Client -->|"1. Submits chat query"| Router{"🤖 LLM Router (Gemini)"}
     
     %% Router checks relevance
-    Router -->|"2. Checks query topic"| IsFintech{"Is it a Fintech SaaS query?"}
+    Router -->|"2. Checks query topic"| IsTheme{"Is query related to configured Theme?"}
     
     %% Safeguard Refusal Path (Left branch)
-    IsFintech -->|"No (General Query)"| Safeguard["🛡️ Refusal Safeguard"]
+    IsTheme -->|"No (General Query)"| Safeguard["🛡️ Refusal Safeguard"]
     Safeguard -->|"Blocks answering from LLM memory"| RefusalReply["Polite Decline Answer"]
     RefusalReply -->|"Returns response"| Client
     
     %% RAG Retrieval Path (Right branch)
-    IsFintech -->|"Yes (Fintech Query)"| Search["🔍 Search internal knowledge base"]
+    IsTheme -->|"Yes (Theme Query)"| Search["🔍 Search internal knowledge base"]
     
     %% Ingestion background flow
     subgraph Ingestion ["Knowledge Ingestion (Offline Feed)"]
@@ -45,19 +45,40 @@ flowchart TD
 
     %% Class assignments
     class Client,Admin client;
-    class Router,IsFintech router;
+    class Router,IsTheme router;
     class DB kb;
     class Search,Synth process;
     class VerifiedReply reply;
     class Safeguard,RefusalReply block;
 ```
 
+---
+
 ## Features & API Endpoints
 
 The backend exposes two main HTTP POST endpoints under FastAPI:
 
-- **`POST /ingest`**: Accepts raw text documents, splits them into manageable chunks, generates vector embeddings, and stores them in the Qdrant database collection.
-- **`POST /query`**: Accepts user queries and history. An LLM agent routes queries to retrieve platform documentation from Qdrant. If a query does not trigger retrieval, the direct pathway is refused to ensure responses are fully grounded in the local database.
+- **`POST /ingest`**: Accepts raw text documents, splits them into manageable chunks (using `RecursiveCharacterTextSplitter`), generates dense/sparse embeddings, and stores them in the Qdrant database.
+- **`POST /query`**: Accepts user queries and conversation history. An LLM agent routes queries to retrieve platform documentation from Qdrant. If the query does not match the configured theme, direct generation is refused to keep responses strictly grounded.
+- **`GET /health`**: Performs liveness checks, confirming connection to the vector store downstream.
+
+---
+
+## Configuration
+
+The application is configured using environment variables (stored locally in a `.env` file).
+
+| Environment Variable | Description | Default Value |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Google Gemini API credentials | *(Required)* |
+| `GEMINI_MODEL` | Gemini LLM model for routing and synthesis | `gemini-3.1-flash-lite` |
+| `GEMINI_EMBED_MODEL` | Google Generative AI embeddings model | `gemini-embedding-001` |
+| `GEMINI_TEMPERATURE` | Generation temperature (0.0 for deterministic RAG answers) | `0.0` |
+| `PORT` | FastAPI server port for Chatbot Backend | `8000` |
+| `HOST` | FastAPI server bind address | `0.0.0.0` |
+| `QDRANT_URL` | URL to access the Qdrant database instance (e.g. `http://localhost:6333` or `:memory:`) | *(Required)* |
+| `QDRANT_API_KEY` | Optional API Key if using Qdrant Cloud | `None` |
+| `CHATBOT_THEME` | The primary theme boundary for retrieval routing & safeguards | `Fintech SaaS platform` |
 
 ---
 
@@ -88,7 +109,7 @@ graph TD
 
 ### 1. Ingestion Path
 
-The ingestion pipeline converts plain text into queryable semantic chunks inside the Qdrant Database.
+The ingestion pipeline splits input text and uploads semantic chunks (with both dense Gemini and sparse BM25 embeddings) to the Qdrant database.
 
 ```mermaid
 sequenceDiagram
@@ -99,9 +120,19 @@ sequenceDiagram
 
     Client->>App: POST /ingest {"text": "...", "metadata": {...}}
     Note over App: Chunks text using<br/>RecursiveCharacterTextSplitter
-    App->>VectorStore: Add document chunks (Dense + Sparse embeddings)
-    VectorStore-->>App: Confirmation
-    App-->>Client: Response {"status": "success", "chunk_count": X}
+    
+    alt Ingestion Success
+        rect rgb(220, 252, 231)
+            App->>VectorStore: Add document chunks (Dense + Sparse embeddings)
+            VectorStore-->>App: Confirmation
+            App-->>Client: Response {"status": "success", "chunk_count": X}
+        end
+    else Ingestion Failure (Database Offline / Missing Credentials)
+        rect rgb(254, 226, 226)
+            App->>VectorStore: Connection Error / Missing Key
+            App-->>Client: HTTP 500 Internal Server Error
+        end
+    end
 ```
 
 ### 2. Query Path
@@ -146,63 +177,57 @@ sequenceDiagram
 
 ---
 
-## Containerization & Kubernetes Deployment
+## Local Development Setup
 
-To demonstrate cloud-native design, we deploy this chatbot utilizing a decoupled stateless/stateful architecture.
+To run the chatbot and api gateway services locally on your machine, follow these steps:
 
-### Kubernetes Bootstrap Sequence
+### Prerequisites
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Kubelet as Kubernetes Kubelet
-    participant App as Chatbot Pod (FastAPI)
-    participant K8s as Kubernetes API Server
-    participant Qdrant as Qdrant Service
+- Python 3.10 or higher
+- Docker Desktop (required to run Qdrant database locally)
 
-    Note over App: Startup & Bootstrapping
-    App->>Qdrant: HTTP Liveness Check /collections
-    alt Connection Success
-        rect rgb(220, 252, 231)
-            Qdrant-->>App: HTTP 200 OK
-            App->>K8s: Report Ready (Readiness Probe Succeeded)
-        end
-    else Connection Failure
-        rect rgb(254, 226, 226)
-            Qdrant-->>App: Connection Error / Timeout
-            App->>K8s: Report Not Ready (Readiness Probe Fails)
-            Note over K8s: Pod remains out of load balancer rotation
-        end
-    end
+### 1. Environment Setup
+
+Configure your Python environment and dependencies:
+```bash
+./setup_env.sh
+```
+Or manually:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-### Steps to Deploy to a Kubernetes Cluster
+### 2. Configure Environment Variables
 
-1. **Namespace Setup**:
-   ```bash
-   kubectl apply -f k8s/namespace.yaml
-   ```
+Create a `.env` file in the root directory:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.1-flash-lite
+QDRANT_URL=http://localhost:6333
+CHATBOT_THEME=Fintech SaaS platform
+```
 
-2. **Secret Configuration**:
-   Copy the secret template and fill in your Base64 encoded Google Gemini API key:
-   ```bash
-   cp k8s/secrets.yaml.template k8s/secrets.yaml
-   # Edit k8s/secrets.yaml with your base64 credentials
-   kubectl apply -f k8s/secrets.yaml
-   ```
+### 3. Run Qdrant Database
 
-3. **Deploy Self-Hosted Qdrant DB**:
-   ```bash
-   kubectl apply -f k8s/qdrant-statefulset.yaml
-   ```
+Start a local instance of Qdrant Vector DB:
+```bash
+docker run -d -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant:latest
+```
 
-4. **Build and Deploy the FastAPI Web Server**:
-   ```bash
-   docker build -t rag-chatbot:latest .
-   kubectl apply -f k8s/backend-deployment.yaml
-   ```
+### 4. Start Chatbot Backend
 
-5. **Expose the Application**:
-   ```bash
-   kubectl apply -f k8s/ingress.yaml
-   ```
+Run the backend API (FastAPI) on port 8000:
+```bash
+# Ensure virtualenv is active
+python -m uvicorn src.chatbot_backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 5. Start API Gateway
+
+Run the gateway API (FastAPI proxy) on port 8080:
+```bash
+# Ensure virtualenv is active
+python -m uvicorn src.api_gateway.main:app --host 0.0.0.0 --port 8080 --reload
+```
