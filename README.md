@@ -17,39 +17,34 @@ flowchart TD
     classDef process fill:#f9fafb,stroke:#d1d5db,stroke-width:1px,color:#374151;
     
     %% Main customer interaction entry point
-    Client(["📱 Client App / Customer"])
+    Client(["📱 Client App / Customer"]):::client
     
-    Client -->|"1. Submits chat query"| Router{"🤖 LLM Router (Gemini)"}
+    Client -->|"1. Submits chat query"| Classifier{"🤖 Classifier Node (Gemini)"}:::router
     
-    %% Router checks relevance
-    Router -->|"2. Checks query topic"| IsTheme{"Is query related to configured Theme?"}
+    %% Classifier branches
+    Classifier -->|"Theme Query (rag)"| QA["🔍 RAG QA Node"]:::process
+    Classifier -->|"General Query (refuse)"| Safeguard["🛡️ Safeguard Node"]:::block
     
-    %% Safeguard Refusal Path (Left branch)
-    IsTheme -->|"No (General Query)"| Safeguard["🛡️ Refusal Safeguard"]
-    Safeguard -->|"Blocks answering from LLM memory"| RefusalReply["Polite Decline Answer"]
-    RefusalReply -->|"Returns response"| Client
+    %% Qdrant DB Retrieval
+    QA -->|"Retrieve context"| DB[("📚 Knowledge Base (Qdrant)")]:::kb
+    DB -->|"Return source text"| QA
     
-    %% RAG Retrieval Path (Right branch)
-    IsTheme -->|"Yes (Theme Query)"| Search["🔍 Search internal knowledge base"]
+    %% Critique verification
+    QA -->|"2. Draft response"| Critique{"🔎 Critique Node (Groundedness Check)"}:::router
+    Safeguard -->|"Polite refusal draft"| Critique
+    
+    %% Critique outcomes
+    Critique -->|"PASS (or Max 3 Attempts)"| VerifiedReply["Verified Answer"]:::reply
+    Critique -->|"FAIL (Loop back to refine)"| Classifier
+    
+    VerifiedReply -->|"3. Returns response"| Client
     
     %% Ingestion background flow
     subgraph Ingestion ["Knowledge Ingestion (Offline Feed)"]
-        Admin(["Product / Ops Admin"]) -->|"Uploads FAQs & Guides"| DB[("📚 Knowledge Base (Qdrant)")]
+        style Ingestion fill:#f9fafb,stroke:#d1d5db,stroke-width:1px;
+        Admin(["Product / Ops Admin"]):::client -->|"Uploads FAQs & Guides"| Split["✂️ Text Splitter"]:::process
+        Split -->|"Generate Dense & Sparse Embeddings"| DB
     end
-    
-    Search -->|"Fetch context chunks"| DB
-    DB -->|"Returns factual source text"| Synth["✏️ Synthesis Engine"]
-    Synth -->|"Generates grounded response"| VerifiedReply["Verified Platform Answer"]
-    
-    VerifiedReply -->|"Returns response"| Client
-
-    %% Class assignments
-    class Client,Admin client;
-    class Router,IsTheme router;
-    class DB kb;
-    class Search,Synth process;
-    class VerifiedReply reply;
-    class Safeguard,RefusalReply block;
 ```
 
 ---
@@ -87,28 +82,47 @@ The application is configured using environment variables (stored locally in a `
 Below is a high-level flowchart showing how ingestion and querying are routed through the FastAPI backend:
 
 ```mermaid
-graph TD
-    Server[FastAPI Server]
+flowchart TD
+    %% Styling classes
+    classDef main fill:#f9fafb,stroke:#d1d5db,stroke-width:1px,color:#374151;
+    classDef ingest fill:#ecfdf5,stroke:#10b981,stroke-width:1px,color:#065f46;
+    classDef lgNode fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af;
+    classDef decision fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#b45309;
+    classDef endNode fill:#f3e8ff,stroke:#7e22ce,stroke-width:2px,color:#6b21a8;
+
+    Server[FastAPI Server]:::main
     
     %% Ingest path
-    Server -->|POST /ingest| Ingest[Document Ingestion Path]
-    Ingest --> Split[RecursiveCharacterTextSplitter]
-    Split --> Embed[Gemini Dense / FastEmbed Sparse]
-    Embed --> DB[(Qdrant DB)]
+    Server -->|POST /ingest| Ingest[Document Ingestion Path]:::ingest
+    Ingest --> Split[RecursiveCharacterTextSplitter]:::ingest
+    Split --> Embed[Gemini Dense / FastEmbed Sparse]:::ingest
+    Embed --> DB[(Qdrant DB)]:::ingest
 
     %% Query path
-    Server -->|POST /query| Query[Query Processing Path]
-    Query --> Graph[LangGraph Agent Flow]
-    Graph --> Classifier{Classifier Node}
+    Server -->|POST /query| Query[Query Processing Path]:::main
     
-    Classifier -->|rag| QA[RAG QA Node]
-    Classifier -->|refuse| Safeguard[Safeguard Node]
+    subgraph LangGraph ["🤖 LangGraph Agent Flow (Highlighted)"]
+        style LangGraph fill:#f0f7ff,stroke:#2563eb,stroke-width:3px,stroke-dasharray: 5 5;
+        
+        Graph[Agent Coordinator]:::lgNode
+        Classifier{Classifier Node}:::decision
+        QA[RAG QA Node]:::lgNode
+        Safeguard[Safeguard Node]:::lgNode
+        Critique[Critique Node]:::lgNode
+        End([End & Return]):::endNode
+        
+        Graph --> Classifier
+        Classifier -->|rag| QA
+        Classifier -->|refuse| Safeguard
+        
+        QA --> Critique
+        Safeguard --> Critique
+        
+        Critique -->|PASS / Max Attempts| End
+        Critique -->|FAIL| Classifier
+    end
     
-    QA --> Critique[Critique Node]
-    Safeguard --> Critique
-    
-    Critique -->|PASS / Max Attempts| End([End & Return])
-    Critique -->|FAIL| Classifier
+    Query --> Graph
 ```
 
 ### 1. Ingestion Path
@@ -148,8 +162,8 @@ sequenceDiagram
     autonumber
     actor User
     participant App as FastAPI Server (main.py)
-    participant Graph as LangGraph Agent (agent_flow.py)
-    participant Classifier as Classifier Node (Gemini)
+    participant Graph as LangGraph Agent (agent_flow)
+    participant Classifier as Classifier Node (Embeddings)
     participant QA as RAG QA Node (Gemini)
     participant Safeguard as Safeguard Node (Gemini)
     participant Critique as Critique Node (Gemini)
@@ -176,9 +190,9 @@ sequenceDiagram
             end
         end
         
-        Graph->>Critique: Evaluate draft_response groundedness
+        Graph->>Critique: Evaluate draft_response (groundedness / theme-adherence)
         
-        alt Validation Passes (or category is refuse, or max attempts reached)
+        alt Validation Passes (or max attempts reached)
             rect rgb(220, 252, 231)
                 Critique-->>Graph: Status: PASS
                 Note over Graph: Exit loop

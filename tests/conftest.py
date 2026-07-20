@@ -13,3 +13,12 @@ class MockEmbeddings:
 # Start the patch globally so it applies to all imports during collection
 patcher = patch("langchain_google_genai.GoogleGenerativeAIEmbeddings", MockEmbeddings)
 patcher.start()
+
+@pytest.fixture(autouse=True)
+def reset_classifier_cache():
+    try:
+        import src.theme_based_rag_backend.agent_flow.nodes.classifier as classifier_module
+        classifier_module.theme_embedding_cached = None
+    except ImportError:
+        pass
+    yield
