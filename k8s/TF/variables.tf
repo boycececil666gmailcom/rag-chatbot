@@ -9,3 +9,9 @@ variable "kube_context" {
   type        = string
   default     = null
 }
+
+variable "namespace" {
+  description = "Kubernetes namespace to deploy into"
+  type        = string
+  default     = "theme-based-rag-workflow-jiragraph"
+}

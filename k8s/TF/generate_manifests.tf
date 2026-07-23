@@ -9,9 +9,9 @@ resource "local_file" "generated_namespace_yaml" {
     apiVersion = "v1"
     kind       = "Namespace"
     metadata = {
-      name = "theme-based-rag-workflow"
+      name = var.namespace
       labels = {
-        "app.kubernetes.io/name" = "theme-based-rag-workflow"
+        "app.kubernetes.io/name" = var.namespace
         environment              = "production"
       }
     }
@@ -27,7 +27,7 @@ resource "local_file" "generated_backend_yaml" {
       kind       = "Service"
       metadata = {
         name      = "theme-based-rag-backend-service"
-        namespace = "theme-based-rag-workflow"
+        namespace = var.namespace
         labels    = { app = "theme-based-rag-backend" }
       }
       spec = {
@@ -41,7 +41,7 @@ resource "local_file" "generated_backend_yaml" {
       kind       = "Deployment"
       metadata = {
         name      = "theme-based-rag-backend"
-        namespace = "theme-based-rag-workflow"
+        namespace = var.namespace
         labels    = { app = "theme-based-rag-backend" }
       }
       spec = {

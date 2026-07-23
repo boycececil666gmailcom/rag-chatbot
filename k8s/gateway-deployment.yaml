@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: theme-based-rag-gateway-service
-  namespace: theme-based-rag-workflow
+  namespace: theme-based-rag-workflow-jiragraph
   labels:
     app: theme-based-rag-gateway
 spec:
@@ -18,7 +18,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: theme-based-rag-gateway
-  namespace: theme-based-rag-workflow
+  namespace: theme-based-rag-workflow-jiragraph
   labels:
     app: theme-based-rag-gateway
 spec:

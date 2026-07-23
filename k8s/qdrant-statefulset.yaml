@@ -2,10 +2,11 @@ apiVersion: v1
 kind: Service
 metadata:
   name: qdrant-service
-  namespace: theme-based-rag-workflow
+  namespace: theme-based-rag-workflow-jiragraph
   labels:
     app: qdrant
 spec:
+  publishNotReadyAddresses: true
   ports:
     - port: 6333
       targetPort: 6333
@@ -25,10 +26,10 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qdrant
-  namespace: theme-based-rag-workflow
+  namespace: theme-based-rag-workflow-jiragraph
 spec:
   serviceName: "qdrant-service"
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: qdrant
@@ -44,7 +45,7 @@ spec:
           command:
             - "sh"
             - "-c"
-            - "exec /qdrant/qdrant --uri http://$(POD_NAME).qdrant-service.theme-based-rag-workflow.svc.cluster.local:6335 --bootstrap http://qdrant-0.qdrant-service.theme-based-rag-workflow.svc.cluster.local:6335"
+            - "exec /qdrant/qdrant --uri http://$(POD_NAME).qdrant-service.theme-based-rag-workflow-jiragraph.svc.cluster.local:6335 --bootstrap http://qdrant-0.qdrant-service.theme-based-rag-workflow-jiragraph.svc.cluster.local:6335"
           env:
             - name: POD_NAME
               valueFrom:

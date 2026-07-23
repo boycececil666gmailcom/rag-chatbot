@@ -2,13 +2,24 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: theme-based-rag-ingress
-  namespace: theme-based-rag-workflow
+  namespace: theme-based-rag-workflow-jiragraph
   annotations:
     kubernetes.io/ingress.class: "nginx"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
+  ingressClassName: "nginx"
   rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: theme-based-rag-gateway-service
+                port:
+                  number: 80
     - host: theme-based-rag-workflow.local # In production, replace with your actual registered domain name
       http:
         paths:

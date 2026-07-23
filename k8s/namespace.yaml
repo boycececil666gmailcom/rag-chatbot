@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: theme-based-rag-workflow
+  name: theme-based-rag-workflow-jiragraph
   labels:
-    app.kubernetes.io/name: theme-based-rag-workflow
+    app.kubernetes.io/name: theme-based-rag-workflow-jiragraph
     environment: production

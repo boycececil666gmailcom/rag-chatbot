@@ -1,0 +1,51 @@
+"apiVersion": "v1"
+"kind": "Service"
+"metadata":
+  "labels":
+    "app": "theme-based-rag-backend"
+  "name": "theme-based-rag-backend-service"
+  "namespace": "theme-based-rag-workflow-jiragraph"
+"spec":
+  "ports":
+  - "name": "http"
+    "port": 80
+    "targetPort": 8000
+  "selector":
+    "app": "theme-based-rag-backend"
+  "type": "ClusterIP"
+---
+"apiVersion": "apps/v1"
+"kind": "Deployment"
+"metadata":
+  "labels":
+    "app": "theme-based-rag-backend"
+  "name": "theme-based-rag-backend"
+  "namespace": "theme-based-rag-workflow-jiragraph"
+"spec":
+  "replicas": 2
+  "selector":
+    "matchLabels":
+      "app": "theme-based-rag-backend"
+  "template":
+    "metadata":
+      "labels":
+        "app": "theme-based-rag-backend"
+    "spec":
+      "containers":
+      - "env":
+        - "name": "QDRANT_URL"
+          "value": "http://qdrant-service:6333"
+        - "name": "GEMINI_MODEL"
+          "value": "gemini-3.1-flash-lite"
+        - "name": "GEMINI_EMBED_MODEL"
+          "value": "gemini-embedding-001"
+        - "name": "GEMINI_TEMPERATURE"
+          "value": "0.0"
+        - "name": "CHATBOT_THEME"
+          "value": "Fintech SaaS platform"
+        "image": "theme-based-rag-backend:latest"
+        "imagePullPolicy": "Always"
+        "name": "theme-based-rag-backend"
+        "ports":
+        - "containerPort": 8000
+          "name": "http"

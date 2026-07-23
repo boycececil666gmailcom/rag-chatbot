@@ -30,23 +30,17 @@ if [ ! -f "k8s/secrets.yaml" ]; then
     exit 1
 fi
 
-echo "Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml || exit 1
-kubectl apply -f k8s/secrets.yaml || exit 1
-kubectl apply -f k8s/qdrant-statefulset.yaml || exit 1
-kubectl apply -f k8s/backend-deployment.yaml || exit 1
-kubectl apply -f k8s/gateway-deployment.yaml || exit 1
-kubectl apply -f k8s/ingress.yaml || exit 1
+echo "Applying Kubernetes manifests via Terraform..."
+pushd k8s/TF >/dev/null || exit 1
+terraform init || exit 1
+terraform apply -auto-approve || exit 1
+popd >/dev/null || exit 1
 
-echo "Waiting for deployments to roll out..."
-kubectl rollout status statefulset/qdrant -n theme-based-rag-workflow --timeout=90s || exit 1
-kubectl rollout status deployment/theme-based-rag-backend -n theme-based-rag-workflow --timeout=90s || exit 1
-kubectl rollout status deployment/theme-based-rag-gateway -n theme-based-rag-workflow --timeout=90s || exit 1
-
-# Step 4: Port-forward the gateway service
-log_step "[4/4]" "Starting API Gateway Port-Forwarding (port 8080)"
-echo "Access the chatbot gateway at http://localhost:8080"
-echo "Press Ctrl+C to stop port-forwarding."
-kubectl port-forward service/theme-based-rag-gateway-service -n theme-based-rag-workflow 8080:80
+# Step 4: Access Guide (Pure Ingress Mode)
+log_step "[4/4]" "Deployment Completed (Pure Ingress Access Mode)"
+echo -e "\033[1;32mDeployment successful via Terraform & NGINX Ingress!\033[0m"
+echo -e "Access the Gateway via Ingress:"
+echo -e "  Direct Browser: \033[1;36mhttp://localhost/health\033[0m"
+echo -e "  Domain Mode:    \033[1;36mhttp://theme-based-rag-workflow.local/health\033[0m"
 
 

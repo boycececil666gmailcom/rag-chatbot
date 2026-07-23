@@ -3,18 +3,19 @@ import time
 import httpx
 import pytest
 
-GATEWAY_URL = os.getenv("K8S_GATEWAY_URL", "http://localhost:8080")
+GATEWAY_URL = os.getenv("K8S_GATEWAY_URL", "http://localhost")
+HOST_HEADER = os.getenv("K8S_HOST_HEADER", "theme-based-rag-workflow.local")
 
 def test_k8s_real_e2e_flow():
-    """Real end-to-end integration test running against the actual services deployed in Kubernetes."""
-    client = httpx.Client(timeout=60.0)
+    """Real end-to-end integration test running against the actual services deployed in Kubernetes via Ingress."""
+    client = httpx.Client(timeout=60.0, headers={"Host": HOST_HEADER})
     
     # 1. Ingest document via K8s Gateway
     ingest_payload = {
         "text": "The Aurora Project is an experimental quantum computing initiative developed by Zenith Tech for our Fintech SaaS platform.",
         "metadata": {"project": "Aurora"}
     }
-    print(f"\nSending ingest request to: {GATEWAY_URL}/ingest")
+    print(f"\nSending ingest request to: {GATEWAY_URL}/ingest (Host: {HOST_HEADER})")
     ingest_response = client.post(f"{GATEWAY_URL}/ingest", json=ingest_payload)
     
     assert ingest_response.status_code == 200, f"Ingestion failed: {ingest_response.text}"
